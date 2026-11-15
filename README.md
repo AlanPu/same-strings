@@ -120,6 +120,38 @@ REF_DIR=/volume1/docker/same-strings/ref
 不想把整个仓库拷到 NAS 的话，build 只需要三样东西：`Dockerfile`、`nginx.conf`、
 `dist/site/`（149 MB）。`build.py`、`ssm/`、`web/`、`tools/` 都不参与运行镜像。
 
+### 打包成 x86（在 Apple Silicon 上交叉构建）
+
+NAS 绝大多数是 x86_64，而 Mac 是 arm64 —— 在这台机器上直接 `docker build` 出来的镜像
+丢到 NAS 上会报 `exec format error`。基础镜像 `nginx:1.27-alpine` 本身是多架构的，
+Dockerfile 里也只有一条 `rm`，所以交叉构建不需要编译，很快：
+
+```bash
+tools/docker_pack.sh                       # 默认 linux/amd64
+PLATFORM=linux/arm64 tools/docker_pack.sh  # 需要时也可以打 arm64
+```
+
+它会做四件事：预检 docker/buildx、`docker buildx build --platform linux/amd64 --load`、
+**问镜像自己是什么架构**（不信任命令行参数）、导出成
+`dist/docker/same-strings-amd64.tar.gz` 并打印 sha256。产物约 50 MB，传到 NAS 后：
+
+```bash
+gunzip -c same-strings-amd64.tar.gz | docker load
+docker image inspect --format '{{.Os}}/{{.Architecture}}' same-strings:latest
+```
+
+架构断言这一步不是多此一举：交叉构建最常见的失败不是报错，而是**静默产出了宿主架构的
+镜像**，一路部署上去才在 NAS 上炸。脚本直接 `image inspect` 比对，不一致就中止。
+
+`docker-compose.yml` 里 `platform` 也默认 `linux/amd64`（`TARGET_PLATFORM` 可覆盖），
+这样「构建出来的」和「跑起来的」是同一个架构。
+
+导入镜像之后起容器用 `--no-build`，否则 compose 会想再 build 一次：
+
+```bash
+REF_DIR=/volume1/docker/same-strings/ref docker compose up -d --no-build
+```
+
 ### 参照页挂载（可选）
 
 参照页的 3.1 GB 视频**不进镜像**，而是从宿主机目录挂到容器的 `/ref/`：
@@ -280,7 +312,7 @@ dist/            产物（不入库）
 
 ## 工具一览
 
-`tools/` 下 12 个脚本，按用途分三类。都是独立可跑的，不依赖 `build.py`。
+`tools/` 下 13 个脚本，按用途分四类。都是独立可跑的，不依赖 `build.py`。
 
 **诊断（怀疑对齐有问题时才用）**
 
@@ -309,6 +341,12 @@ dist/            产物（不入库）
 | `make_listening.py` | 生成人工试听包（每条依次是 8 位演奏家） |
 | `resolve_meta.py` | 把 b23.tv 短链解析成 BV 号 / 时长 / 分 P / chapters，填 `project.json` 用 |
 
+**部署**
+
+| 脚本 | 干什么 |
+|---|---|
+| `docker_pack.sh` | 交叉构建 x86_64 镜像，导出 `dist/docker/*.tar.gz` 并校验架构 |
+
 ## 排查
 
 **点了播放没反应**：九成是 MIME 或 Range。先 `curl -I` 看 `.m4a` 的 `Content-Type`
@@ -317,6 +355,10 @@ dist/            产物（不入库）
 
 **能播但拖进度条要等半天**：音频/视频缺 `+faststart`（moov 在文件尾）。
 `make_ref.py` 会重封装，`smoke_site.py` 会断言 ftyp 头。
+
+**NAS 上容器起不来，日志报 `exec format error`**：镜像架构不对——在 Apple Silicon 上
+直接 `docker build` 产出的是 arm64。用 `tools/docker_pack.sh` 打 amd64，
+`docker image inspect --format '{{.Os}}/{{.Architecture}}'` 确认是 `linux/amd64` 再导入。
 
 **改了配置但页面没变**：缓存签名没失效。看 `build.log` 里对应阶段是「命中」还是「执行」。
 真不确定就 `--force s3 s4 s5`。

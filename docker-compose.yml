@@ -4,6 +4,11 @@ services:
     image: same-strings:latest
     container_name: same-strings
     restart: unless-stopped
+    # 目标架构。NAS 绝大多数是 x86_64，所以默认 linux/amd64 —— 在 arm64 的 Mac 上
+    # 交叉构建出来的镜像也靠这一行保证「跑的就是 amd64 那份」。
+    # 在 Apple Silicon 上本地试跑（不用模拟）时：
+    #   TARGET_PLATFORM=linux/arm64 docker compose up -d
+    platform: ${TARGET_PLATFORM:-linux/amd64}
     ports:
       # 左边是 NAS 上的端口，冲突了就改这个
       - "${PORT:-8080}:80"
