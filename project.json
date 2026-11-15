@@ -1,0 +1,63 @@
+{
+  "work": {"title": "门德尔松 e 小调小提琴协奏曲 Op.64", "composer": "Mendelssohn", "movements": 3},
+  "anchor": "hahn",
+  "segment": {"mode": "sequential", "duration": 30.0, "maxCount": 8, "minGap": 60.0, "stride": 0, "presets": [10, 15, 20, 25, 30]},
+  "performers": [
+    {
+      "id": "hahn",
+      "display": "哈恩",
+      "fullName": "Hilary Hahn",
+      "bvid": "BV1N54y167qe",
+      "parts": [1]
+    },
+    {
+      "id": "bell",
+      "display": "贝尔",
+      "fullName": "Joshua Bell",
+      "bvid": "BV1T4411q78L",
+      "parts": [1, 2, 3]
+    },
+    {
+      "id": "perlman",
+      "display": "帕尔曼",
+      "fullName": "Itzhak Perlman",
+      "bvid": "BV19E411Z721",
+      "parts": [1]
+    },
+    {
+      "id": "fischer",
+      "display": "费舍尔",
+      "fullName": "Julia Fischer",
+      "bvid": "BV1v5411b7QV",
+      "parts": [1]
+    },
+    {
+      "id": "vengerov",
+      "display": "文格洛夫",
+      "fullName": "Maxim Vengerov",
+      "bvid": "BV11P4y1g7z9",
+      "parts": [1]
+    },
+    {
+      "id": "hadelich",
+      "display": "哈德利希",
+      "fullName": "Augustin Hadelich",
+      "bvid": "BV1g9JVzpEni",
+      "parts": [1]
+    },
+    {
+      "id": "mutter",
+      "display": "穆特",
+      "fullName": "Anne-Sophie Mutter",
+      "bvid": "BV1iW4y1m7TV",
+      "parts": [1]
+    },
+    {
+      "id": "frang",
+      "display": "弗朗",
+      "fullName": "Vilde Frang",
+      "bvid": "BV1iqEtziESe",
+      "parts": [1]
+    }
+  ]
+}

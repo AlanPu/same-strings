@@ -1,0 +1,27 @@
+# ---- 产物 / 中间件：体积大且可重建，不入库 ----
+# dist/：打包结果，同弦.html 约 23 MB，重建约 10 分钟
+dist/
+# work/：中间产物，pcm 2.2 GB、feat 90 MB、src 原始音轨 306 MB
+work/
+build.log
+
+# ---- 音频与视频：版权材料，只保留 bvid 引用（见 project.json）----
+*.m4a
+*.mp3
+*.mp4
+*.wav
+*.flac
+*.aac
+*.opus
+
+# ---- Python ----
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+.vscode/
+.idea/
+*.swp
