@@ -97,34 +97,57 @@ python3 -m venv .venv
 
 ## Docker 部署（NAS）
 
-构建仍在本机跑（要 2.2 GB PCM、几十分钟 CPU 和网络），镜像只负责托管产物：
+分两步：本机产出站点，NAS 上构建运行。**构建（下载音轨、对齐、切片）永远留在本机** —— 它要
+2.2 GB PCM 和几十分钟 CPU，塞给 NAS 只会把镜像撑到几 GB，而且每次改一个参数都要重来一遍。
 
 ```bash
-.venv/bin/python build.py                 # 先产出 dist/site/
-docker compose up -d --build              # 再在 NAS 上起容器
+.venv/bin/python build.py     # 产出 dist/site/（149 MB，424 个片段）
+tools/nas_pack.sh             # 打成传输包 dist/nas/same-strings-nas.tar.gz
 ```
 
-默认映射 `8080:80`，打开 `http://<NAS 地址>:8080/`。端口和参照页目录都走环境变量：
+包里**有且只有**运行镜像需要的东西：`Dockerfile`、`nginx.conf`、`docker-compose.yml`、`.env`、
+`dist/site/`，外加一个空的 `ref/`。`build.py`、`ssm/`、`web/`、`tools/` 都不带 —— 它们不参与
+运行镜像，传上去只是让 160 MB 变成几百 MB，还得等。
+
+### 在 NAS 上原生构建（推荐）
+
+NAS 几乎都是 x86_64，原生 build 连交叉都不需要。为什么不在 Mac 上构建：这台机器上没有任何
+容器运行时（`docker` / `podman` / `colima` 都没装），`tools/docker_pack.sh` 跑不起来。为了打一个
+50 MB 的镜像去装一套虚拟机不划算。
 
 ```bash
-PORT=9000 REF_DIR=/volume1/docker/same-strings/ref docker compose up -d
+# 传包。DSM 默认没开 SFTP，scp / rsync 走不通（报 "subsystem request failed"），
+# 所以用 ssh 直通管道，走的是 exec 通道，不需要 sftp-server。
+ssh nas 'cat > /volume1/docker/same-strings-nas.tar.gz' < dist/nas/same-strings-nas.tar.gz
+ssh nas 'cd /volume1/docker && tar xzf same-strings-nas.tar.gz'
+
+# 起容器。DSM 的 PATH 里没有 /usr/local/bin（非交互 shell 只有 /usr/bin:/bin:/usr/sbin:/sbin），
+# docker 装在 /var/packages/ContainerManager/target/usr/bin，所以要么写全路径，要么先 sudo -i
+ssh nas 'cd /volume1/docker/same-strings && sudo /usr/local/bin/docker compose up -d --build'
 ```
 
-或者在同目录写一个 `.env`：
+不想碰命令行就走 UI：**Container Manager → 项目 → 新增 → 选择现有 `docker-compose.yml`**，
+指向 `/volume1/docker/same-strings/docker-compose.yml`，之后启停和日志都在界面里。
+
+首次 build 会拉 `nginx:1.27-alpine`（约 20 MB），NAS 要能上网。
+
+默认映射 `8080:80`，打开 `http://<NAS 地址>:8080/`。端口和参照页目录都走 `.env`：
 
 ```
 PORT=9000
 REF_DIR=/volume1/docker/same-strings/ref
 ```
 
-不想把整个仓库拷到 NAS 的话，build 只需要三样东西：`Dockerfile`、`nginx.conf`、
-`dist/site/`（149 MB）。`build.py`、`ssm/`、`web/`、`tools/` 都不参与运行镜像。
+`nas_pack.sh` 写在包里的 `.env` 用的是相对路径（`REF_DIR=./ref`）—— 解压目录自己就是项目根，
+参照页就在旁边，不用改任何绝对路径就能起。
 
-### 打包成 x86（在 Apple Silicon 上交叉构建）
+包里的 `.dockerignore` 排掉了 `ref/` 和 `.env`。这一条不能省：等 3 GB 视频拷进去之后，
+不排除的话 `docker compose build` 会先把 3 GB 全发给守护进程，表现为「卡在
+Sending build context 不动」，看起来像构建卡死。
 
-NAS 绝大多数是 x86_64，而 Mac 是 arm64 —— 在这台机器上直接 `docker build` 出来的镜像
-丢到 NAS 上会报 `exec format error`。基础镜像 `nginx:1.27-alpine` 本身是多架构的，
-Dockerfile 里也只有一条 `rm`，所以交叉构建不需要编译，很快：
+### 可选：在 Mac 上交叉构建
+
+如果哪天本机装了 Docker，也可以打成镜像传过去，省掉 NAS 上的构建：
 
 ```bash
 tools/docker_pack.sh                       # 默认 linux/amd64
@@ -161,7 +184,18 @@ volumes:
   - "${REF_DIR:-./dist/ref}:/usr/share/nginx/html/ref:ro"
 ```
 
-这样改视频、换画质都不用重新 build 镜像。挂上之后：
+这样改视频、换画质都不用重新 build 镜像。3.1 GB 怎么上去：
+
+```bash
+# 同样走 ssh 管道（DSM 没开 SFTP，scp/rsync 都不通）
+tar --no-xattrs -C dist -cf - ref | ssh nas 'tar -xf - -C /volume1/docker/same-strings'
+```
+
+`--no-xattrs` 不是可选项：不加的话每个文件都会带 `LIBARCHIVE.xattr.com.apple.provenance`
+这样的 pax 扩展头，NAS 上的 GNU tar 不认，解压时刷几十行
+`Ignoring unknown extended header keyword` —— 全是红字，但文件其实是好的。
+
+挂上之后：
 
 | 地址 | 是什么 |
 |---|---|
@@ -356,7 +390,8 @@ dist/            产物（不入库）
 
 | 脚本 | 干什么 |
 |---|---|
-| `docker_pack.sh` | 交叉构建 x86_64 镜像，导出 `dist/docker/*.tar.gz` 并校验架构 |
+| `nas_pack.sh` | 打 NAS 用的传输包 `dist/nas/*.tar.gz`（Dockerfile + conf + `dist/site` + `start.sh`），自动剔掉 macOS 元数据 |
+| `docker_pack.sh` | 交叉构建 x86_64 镜像，导出 `dist/docker/*.tar.gz` 并校验架构（需要本机有 Docker） |
 
 ## 排查
 
