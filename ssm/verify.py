@@ -81,20 +81,33 @@ def run_checks(proj: Project, log) -> tuple[list[dict], bool]:
 
     # 6 选段质量（人工）
     segs = json.loads((config.WORK / "segments.json").read_text(encoding="utf-8"))["segments"]
-    add(6, "选段质量", "抽 5 段无 tutti/静音/截断", f"{len(segs)} 段待听", None, MANUAL)
+    listens = sorted(config.DIR_CHECK.glob("segment-*.m4a"))
+    add(6, "选段质量", "抽 5 段无 tutti/静音/截断",
+        f"共 {len(segs)} 段；逐段试听包 {len(listens)} 条", None, MANUAL)
 
-    # 8 离线（人工）
-    add(8, "离线可用", "飞行模式可完整答题", "需真机验证", None, MANUAL)
+    # 8 可达性（static 形态没有离线，这是它换来的代价，必须如实标出来）
+    if proj.pack_mode == "static":
+        add(8, "联网可达", "同一网络内 iPad 可答题；断网不可用（本形态的取舍）",
+            "需真机验证", None, MANUAL)
+    else:
+        add(8, "离线可用", "飞行模式可完整答题", "需真机验证", None, MANUAL)
 
-    # 9 体积
-    out = config.DIR_DIST / "同弦.html"
-    mb = out.stat().st_size / 1024 / 1024 if out.exists() else 0
-    add(9, "体积", f"≤ {config.MAX_HTML_MB} MB", f"{mb:.2f} MB", 0 < mb <= config.MAX_HTML_MB)
+    # 9 体积（static 模式只约束页面本身，音频外置另计）
+    site = config.DIR_DIST / config.STATIC_DIRNAME
+    if proj.pack_mode == "static":
+        out = site / "index.html"
+        kb = out.stat().st_size / 1024 if out.exists() else 0
+        add(9, "页面体积", f"≤ {config.STATIC_HTML_MAX_KB} KB（音频外置，不计入）",
+            f"{kb:.1f} KB", 0 < kb <= config.STATIC_HTML_MAX_KB)
+    else:
+        out = config.DIR_DIST / "同弦.html"
+        mb = out.stat().st_size / 1024 / 1024 if out.exists() else 0
+        add(9, "体积", f"≤ {config.MAX_HTML_MB} MB", f"{mb:.2f} MB", 0 < mb <= config.MAX_HTML_MB)
 
-    # 10 无网络请求
+    # 10 无第三方请求
     html = out.read_text(encoding="utf-8") if out.exists() else ""
     ext = sum(html.count(k) for k in ("http://", "https://", "@import"))
-    add(10, "无网络请求", "0 个外部引用", f"{ext} 处", ext == 0)
+    add(10, "无第三方请求", "0 个外部域名引用", f"{ext} 处", ext == 0)
 
     # 11 存储降级（人工 + 静态检查）
     app_js = (config.WEB / "app.js").read_text(encoding="utf-8")
@@ -102,13 +115,17 @@ def run_checks(proj: Project, log) -> tuple[list[dict], bool]:
     add(11, "存储降级", "禁用 localStorage 仍可练习",
         "有 try/catch 与内存降级" if guarded else "未发现降级路径", None if not guarded else None, MANUAL)
 
-    # 12 片段总数（上限不再写死 60，按 30s 的体积预算推导）
-    cap = config.max_clip_count(proj.seg_duration)
-    add(12, "片段总数", f"= {proj.n}×{len(segs)} 且 ≤ 字节预算上限 {cap}",
-        f"{len(clips)}", len(clips) == proj.n * len(segs) and len(clips) <= cap)
+    # 12 片段总数（inline 模式受字节预算约束；static 模式只看是否与段数吻合）
+    if proj.pack_mode == "static":
+        add(12, "片段总数", f"= {proj.n}×{len(segs)}（静态托管不限体积）",
+            f"{len(clips)}", len(clips) == proj.n * len(segs))
+    else:
+        cap = config.max_clip_count(proj.seg_duration)
+        add(12, "片段总数", f"= {proj.n}×{len(segs)} 且 ≤ 字节预算上限 {cap}",
+            f"{len(clips)}", len(clips) == proj.n * len(segs) and len(clips) <= cap)
 
     # 13 / 14 出题逻辑（node 模拟）
-    sim = run_node_sim()
+    sim = run_node_sim(proj)
     if sim:
         add(13, "选项合法性", "每题 4 个互不相同且含正确项",
             f"抽样 {sim['rounds']} 轮 × 10 题，异常 {sim['badOptions']} 次",
@@ -143,18 +160,38 @@ def run_checks(proj: Project, log) -> tuple[list[dict], bool]:
         increasing = all(b >= a + proj.seg_duration - 1e-6
                          for a, b in zip(starts, starts[1:]))
         head_ok = bool(starts) and starts[0] <= 1.0
-        add(17, "切分顺序", "首段起于 0s，起点递增且互不重叠",
-            "起点 " + ", ".join(f"{t:.1f}" for t in starts) + " s",
-            head_ok and increasing)
+        if len(starts) > 8:
+            shown = (f"{starts[0]:.0f}, {starts[1]:.0f}, … , {starts[-1]:.0f} s"
+                     f"（共 {len(starts)} 段）")
+        else:
+            shown = "起点 " + ", ".join(f"{t:.1f}" for t in starts) + " s"
+        add(17, "切分顺序", "首段起于 0s，起点递增且互不重叠", shown, head_ok and increasing)
+
+    # 18 静态资源完整性（static 模式的命门：少一个文件就是 404）
+    if proj.pack_mode == "static":
+        audio_dir = site / "audio"
+        have = {p.stem for p in audio_dir.glob("*.m4a")} if audio_dir.exists() else set()
+        need = set(clips)
+        missing_files = need - have
+        extra = have - need
+        add(18, "静态资源完整", "每个 clipId 都有对应 audio/*.m4a，且无残留旧文件",
+            f"{len(have)} 个文件；缺 {len(missing_files)}，多 {len(extra)}",
+            not missing_files and not extra)
+        total_mb = sum(p.stat().st_size for p in audio_dir.glob("*.m4a")) / 1024 / 1024 \
+            if audio_dir.exists() else 0
+        add(19, "服务端存储", "音频总量（NAS 上占用，不随请求增长）",
+            f"{total_mb:.1f} MB", total_mb > 0)
 
     passed = all(r["ok"] is not False for r in rows)
     return rows, passed
 
 
-def run_node_sim() -> dict | None:
+def run_node_sim(proj) -> dict | None:
     """跑 tests/player_sim.js，返回其 JSON 摘要。"""
     script = config.ROOT / "tests" / "player_sim.js"
-    bank = config.DIR_DIST / "bank.json"
+    # static 模式没有 dist/bank.json（音频外置，索引仍在站点里留了一份）
+    bank = (config.DIR_DIST / config.STATIC_DIRNAME / "bank.json"
+            if proj.pack_mode == "static" else config.DIR_DIST / "bank.json")
     if not script.exists() or not bank.exists():
         return None
     try:
@@ -199,9 +236,16 @@ def print_table(rows: list[dict], log) -> None:
         if packs:
             log.line(f"  #6 逐段试听：{len(packs)} 条（每条依次是 8 位演奏家）→ "
                      + "、".join(p.name for p in packs[:3]) + (" …" if len(packs) > 3 else ""))
-        log.line(f"  #8/#11 真机：AirDrop 到 iPad 后开飞行模式连答 10 题；"
-                 f"iPad 设置里关掉 Safari 网站数据后重开，确认仍可答题")
-        log.line(f"  #10 远程调试：Safari 开发菜单连 iPad，确认「网络」标签无请求")
+            log.line(f"     都在 {config.DIR_CHECK}，重新生成：python tools/make_listening.py 6")
+        if proj.pack_mode == "static":
+            log.line("  #8/#11 真机：浏览器打开 http://<NAS 地址>:8080/ 连答 10 题；"
+                     "再关掉 Safari 网站数据重开，确认仍可答题")
+            log.line("     本形态断网即不可用（这是换取覆盖全曲的代价），#10「无网络请求」"
+                     "已不适用，改为「无第三方域名」")
+        else:
+            log.line("  #8/#11 真机：AirDrop 到 iPad 后开飞行模式连答 10 题；"
+                     "iPad 设置里关掉 Safari 网站数据后重开，确认仍可答题")
+            log.line("  #10 远程调试：Safari 开发菜单连 iPad，确认「网络」标签无请求")
 
 
 if __name__ == "__main__":

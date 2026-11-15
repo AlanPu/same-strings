@@ -14,7 +14,6 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 EDGE = Path("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge")
@@ -73,10 +72,18 @@ window.__osc = 0;
       step('顺序第1题', pill(1));
       step('顺序选项数', $$('.opt').length);
       step('答题页有时长chips', $$('.chips-s .chip').length);
+      /* 静态形态按相对 URL 取音频；内联形态是 blob:。看 src 就能区分走了哪条路 */
+      step('音频URL形式', (function () {
+        var a = document.querySelector('audio');
+        if (!a) return 'none';
+        if (a.src.indexOf('blob:') === 0) return 'blob';
+        return a.src.indexOf('/audio/') > 0 ? 'relative' : a.src.slice(0, 24);
+      })());
       click($$('.opt')[0]);
       step('顺序反馈', !!$('.feedback'));
       var total = 0;
-      for (var i = 0; i < 12; i++) {
+      /* 上限要覆盖全曲段数（static 形态下 53 段），走到小结即停 */
+      for (var i = 0; i < 80; i++) {
         if ($('.score')) break;
         var o = $$('.opt')[0];
         if (o && !$('.feedback')) click(o);
@@ -163,29 +170,39 @@ def find_browser() -> Path:
 
 
 def run_case(src: Path, inject_close_storage: bool) -> str:
-    html = src.read_text(encoding="utf-8")
+    """原地注入断言脚本 → 跑无头浏览器 → 恢复原文。
+
+    必须原地跑（不能复制到临时目录）：static 形态的页面按相对路径取 audio/*.m4a，
+    挪到 /tmp 下音频全 404，就测不出真实行为了。
+    """
+    src = src.resolve()
+    original = src.read_text(encoding="utf-8")
     extra = ""
     if inject_close_storage:
         extra = ("<script>try{Object.defineProperty(window,'localStorage',{get:function(){"
                  "throw new Error('blocked')}})}catch(e){}</script>")
-    html = html.replace("</body>", extra + INJECT + "</body>")
-    with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as fh:
-        fh.write(html)
-        tmp = Path(fh.name)
+    src.write_text(original.replace("</body>", extra + INJECT + "</body>"), encoding="utf-8")
     browser = find_browser()
-    proc = subprocess.run(
-        [str(browser), "--headless=new", "--disable-gpu", "--no-sandbox",
-         "--virtual-time-budget=9000", "--dump-dom", tmp.as_uri()],
-        capture_output=True, text=True, timeout=240,
-    )
-    tmp.unlink(missing_ok=True)
-    dom = proc.stdout
+    try:
+        proc = subprocess.run(
+            [str(browser), "--headless=new", "--disable-gpu", "--no-sandbox",
+             "--virtual-time-budget=30000", "--dump-dom", src.as_uri()],
+            capture_output=True, text=True, timeout=300,
+        )
+        dom = proc.stdout
+    finally:
+        src.write_text(original, encoding="utf-8")
     m = re.search(r'<pre id="test-out">(.*?)</pre>', dom, re.S)
     return m.group(1) if m else f"[未取到结果]\n{(proc.stderr or '')[-600:]}"
 
 
 if __name__ == "__main__":
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("dist/同弦.html")
+    if len(sys.argv) > 1:
+        target = Path(sys.argv[1])
+    else:
+        site = Path("dist/site/index.html")
+        target = site if site.exists() else Path("dist/同弦.html")
+    print(f"== 目标 {target} ==")
     print("== 正常环境 ==")
     print(run_case(target, False))
     print()

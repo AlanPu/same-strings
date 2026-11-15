@@ -1,7 +1,8 @@
 {
   "work": {"title": "门德尔松 e 小调小提琴协奏曲 Op.64", "composer": "Mendelssohn", "movements": 3},
   "anchor": "hahn",
-  "segment": {"mode": "sequential", "duration": 30.0, "maxCount": 8, "minGap": 60.0, "stride": 0, "presets": [10, 15, 20, 25, 30]},
+  "pack": {"mode": "static"},
+  "segment": {"mode": "sequential", "duration": 30.0, "maxCount": 60, "minGap": 60.0, "stride": 0, "presets": [10, 15, 20, 25, 30]},
   "performers": [
     {
       "id": "hahn",

@@ -17,6 +17,9 @@ from ssm.config import load_project  # noqa: E402
 
 def main() -> None:
     proj = load_project()
+    # 规格 §10 第 6 项只要「抽 5 段」人工试听。全曲 53 段每条都是 4 分钟的拼接，
+    # 全做既慢又没人听，默认只做前 6 段（分布在第 1 乐章前 3 分钟，最容易出问题的位置）。
+    limit = int(sys.argv[1]) if len(sys.argv) > 1 else 6
     data = json.loads((config.WORK / "clips.json").read_text(encoding="utf-8"))
     out_dir = config.DIR_CHECK
     # 段数会随体积预算变化，先清掉上一轮的试听包，免得残留旧段误导人工核对
@@ -28,7 +31,7 @@ def main() -> None:
               "-b:a", "96k", str(silence)], "生成静音")
 
     made = []
-    for seg in data["segments"]:
+    for seg in data["segments"][:limit]:
         order = [p.id for p in proj.performers]
         parts = []
         for pid in order:

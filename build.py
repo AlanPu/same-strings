@@ -43,6 +43,18 @@ def _h(obj) -> str:
     return hashlib.sha1(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
 
 
+def _file_sig(path) -> str:
+    """某份中间产物的内容指纹。
+
+    阶段签名只写「配置」是不够的：s4 真正吃的是 segments.json，s5 吃的是 clips.json。
+    踩过的坑 —— 用旧 segments.json 跑过一次 s4，配置签名没变，于是下次就「缓存命中」，
+    结果 clips.json 还是旧的 48 片段，而 segments.json 已经是新的 53 段，
+    验收里 #12 #15 直接对不上。
+    """
+    p = __import__("pathlib").Path(path)
+    return hashlib.sha1(p.read_bytes()).hexdigest()[:16] if p.exists() else ""
+
+
 def signatures(proj) -> dict[str, str]:
     """逐级累加的阶段签名：上游一变，下游全部失效。"""
     deltas = {
@@ -55,11 +67,13 @@ def signatures(proj) -> dict[str, str]:
                [[p.id, p.nudge] for p in proj.performers]],
         "s2check": [config.WORK.joinpath("check").exists()],
         "s3": [proj.segment_count, proj.seg_duration, proj.seg_min_gap,
-               proj.seg_mode, proj.seg_stride,
+               proj.seg_mode, proj.seg_stride, proj.pack_mode,
                config.W_MS_RATIO, config.W_ACTIVITY, config.W_FLATNESS,
                proj.manual_segments],
-        "s4": [proj.seg_duration, config.FADE_MS, config.CLIP_CODEC, config.CLIP_BITRATE],
-        "s5": [[f.name, f.stat().st_size] for f in sorted(config.WEB.glob("*"))],
+        "s4": [proj.seg_duration, config.FADE_MS, config.CLIP_CODEC, config.CLIP_BITRATE,
+               _file_sig(config.WORK / "segments.json")],
+        "s5": [[f.name, f.stat().st_size] for f in sorted(config.WEB.glob("*"))]
+              + [_file_sig(config.WORK / "clips.json"), proj.pack_mode],
     }
     out: dict[str, str] = {}
     carry = ""
@@ -84,6 +98,8 @@ def outputs_of(stage: str, proj) -> list[str]:
     if stage == "s4":
         return [str(config.WORK / "clips.json")]
     if stage == "s5":
+        if proj.pack_mode == "static":
+            return [str(config.DIR_DIST / config.STATIC_DIRNAME / "index.html")]
         return [str(config.DIR_DIST / "同弦.html"), str(config.DIR_DIST / "bank.json")]
     return []
 
@@ -106,8 +122,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     log.line(f"曲目：{proj.title}（{proj.composer}）")
-    log.line(f"演奏家 {proj.n} 位 · 锚点 {proj.anchor} · 段数 {proj.segment_count} · "
-             f"片段 {proj.clip_count}")
+    mode_note = "（上限，实际切到乐曲末尾为止）" if proj.pack_mode == "static" else ""
+    log.line(f"演奏家 {proj.n} 位 · 锚点 {proj.anchor} · 段数 {proj.segment_count}{mode_note} · "
+             f"片段 {proj.clip_count} · 打包 "
+             f"{'静态站点（音频外置）' if proj.pack_mode == 'static' else '单文件内联'}")
     log.kv(参数路径=str(config.ROOT / "project.json"))
     try:
         log.line("  " + proj.check_budget())

@@ -116,6 +116,19 @@
     return bytes;
   }
 
+  /* 内联音频表：inline 模式是 {clipId: base64}；static 模式是空对象 {}。 */
+  function loadAudioMap() {
+    if (audioMap !== null) return audioMap;
+    try {
+      var el = document.getElementById('audio');
+      var raw = el && el.textContent ? el.textContent.trim() : '';
+      audioMap = raw ? (JSON.parse(raw) || {}) : {};
+    } catch (e) {
+      audioMap = {};
+    }
+    return audioMap;
+  }
+
   function urlOf(clipId) {
     if (urls.has(clipId)) {
       var hit = urls.get(clipId);
@@ -123,8 +136,11 @@
       urls.set(clipId, hit);           // LRU：命中的挪到队尾
       return hit;
     }
-    if (!audioMap) audioMap = JSON.parse(document.getElementById('audio').textContent);
-    var url = URL.createObjectURL(new Blob([decodeB64(audioMap[clipId])], { type: 'audio/mp4' }));
+    var b64 = loadAudioMap()[clipId];
+    /* 静态托管（音频外置）：直接给相对 URL 让 Web 服务器发。
+     * 一次只取当前这一段（几百 KB），服务器支持 Range 就能拖动，也不占内存。 */
+    if (typeof b64 !== 'string') return 'audio/' + encodeURIComponent(clipId) + '.m4a';
+    var url = URL.createObjectURL(new Blob([decodeB64(b64)], { type: 'audio/mp4' }));
     urls.set(clipId, url);
     if (urls.size > 8) {
       var oldest = urls.keys().next().value;
@@ -348,15 +364,29 @@
       '</div>';
   }
 
+  /* label 形如「第一乐章 · 3:30」，列表行里只显示时间（乐章已经做了分组标题） */
+  function shortLabel(s) {
+    var parts = String(s.label || '').split(' · ');
+    return parts.length > 1 ? parts[parts.length - 1] : String(s.label || '');
+  }
+
   function renderSegments() {
+    var lastMov = null;
     var rows = BANK.segments.map(function (s, i) {
       var rec = S.store.seg[s.id];
       var acc = LOGIC.accuracyOf(S.store, s.id);
       var meta = acc === null ? '还没做过'
         : '正确率 ' + Math.round(acc * 100) + '% · 作答 ' + rec.asked + ' 次';
-      return '<button class="segrow" data-act="seg" data-seg="' + s.id + '">' +
+      /* 几十段时平铺一长串没法定位，按乐章插分组标题 */
+      var head = '';
+      if (s.movement !== lastMov) {
+        lastMov = s.movement;
+        var mname = String(s.label || '').split(' · ')[0];
+        head = '<div class="seghead">' + esc(mname || ('第 ' + s.movement + ' 乐章')) + '</div>';
+      }
+      return head + '<button class="segrow" data-act="seg" data-seg="' + s.id + '">' +
         '<span class="segno mono">' + (i + 1) + '</span>' +
-        '<span class="segname"><span>' + esc(s.label) + '</span>' +
+        '<span class="segname"><span>' + esc(shortLabel(s)) + '</span>' +
           '<span class="segmeta">' + meta + '</span></span>' +
         boxDots(s.id) +
         '<span class="chev">›</span></button>';
@@ -368,7 +398,8 @@
           '<h2 class="h2">选一段来练</h2>' +
           '<button class="btn ghost sm" data-act="home">返回</button>' +
         '</div>' +
-        '<p class="sub">点任意一段就开始；每次随机换一位演奏家，答完可以「再来一题」。</p>' +
+        '<p class="sub">全曲 ' + BANK.segments.length + ' 段，按乐章分组。点任意一段就开始；'
+          + '每次随机换一位演奏家，答完可以「再来一题」。</p>' +
         '<div class="card tight">' +
           '<div class="between" style="margin-bottom:10px">' +
             '<span class="lab">每段听多久</span><span class="tiny">越短越难</span>' +
@@ -725,8 +756,8 @@
   render();
   if (!S.storageOK) S.toast = '存储不可用';
 
-  /* 空闲时预热音频表，避免第一题开始时才解析 20MB JSON */
+  /* 空闲时预热音频表，避免第一题开始时才解析 20MB JSON（static 模式下是空表，无成本） */
   setTimeout(function () {
-    try { if (!audioMap) audioMap = JSON.parse(document.getElementById('audio').textContent); } catch (e) {}
+    try { loadAudioMap(); } catch (e) { /* 预热失败不影响答题 */ }
   }, 400);
 })();

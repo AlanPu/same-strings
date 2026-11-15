@@ -51,6 +51,15 @@ FADE_MS = 20
 CLIP_CODEC = "aac"
 CLIP_BITRATE = "96k"
 MAX_HTML_MB = 25
+
+# 打包形态（project.json 的 pack.mode）
+#   inline：单个自包含 HTML，音频 base64 内联，AirDrop 到 iPad 就能用，受 MAX_HTML_MB 约束；
+#   static：静态站点，音频外置为 audio/*.m4a，由 Nginx 等 Web 服务器按需发送，
+#           不受 HTML 体积约束，段数只受乐曲长度与 maxCount 限制（可覆盖全曲）。
+PACK_MODE = "inline"
+PACK_MODES = ("inline", "static")
+STATIC_HTML_MAX_KB = 300     # static 模式下 index.html 的体积上限（它只剩代码和索引）
+STATIC_DIRNAME = "site"      # dist/site/ 下的产物目录名
 LUFS_TOLERANCE = 0.5         # 响度极差容忍
 MEANCOSSIM_MIN = 0.85        # 对齐质量下限
 MEANCOSSIM_FAIL = 0.75       # 低于此值视为对齐失败
@@ -125,6 +134,7 @@ class Project:
     performers: list[Performer]
     seg_mode: str = SEG_MODE
     seg_stride: float = SEG_STRIDE
+    pack_mode: str = PACK_MODE
     manual_segments: list[float] = field(default_factory=list)
     presets: list[int] = field(default_factory=list)   # 运行时可选时长（秒，≤ duration）
     raw: dict[str, Any] = field(default_factory=dict)
@@ -149,16 +159,21 @@ class Project:
 
     @property
     def segment_count(self) -> int:
-        """S3.5 体积预算：段落数由「字节预算 ÷ 演奏家数」推导，再夹到 [5, maxCount]。
+        """段数。
 
-        这样改 segment.duration 不会把 HTML 撑爆：时长变长 → 段数自动变少。
+        - inline：由「字节预算 ÷ 演奏家数」推导，再夹到 [5, maxCount]。
+          这样改 segment.duration 不会把 HTML 撑爆：时长变长 → 段数自动变少。
+        - static：音频外置，不受 HTML 体积约束，段数直接取 maxCount；
+          真正能切几段由 S3 的「切到乐曲末尾为止」决定（anchor 长度不足时自然停下）。
         """
+        if self.pack_mode == "static":
+            return max(SEG_COUNT_MIN, self.seg_max_count)
         allowed = max_clip_count(self.seg_duration) // self.n
         return max(SEG_COUNT_MIN, min(allowed, self.seg_max_count))
 
     @property
     def clip_count(self) -> int:
-        """片段总数。"""
+        """片段总数（static 模式下是上限，实际以 S3 切出的段数为准）。"""
         return self.n * self.segment_count
 
     def check_budget(self) -> str:
@@ -168,8 +183,13 @@ class Project:
             一行人类可读的预算说明。
 
         Raises:
-            BuildError: 该时长下连最少段数都放不下。
+            BuildError: 该时长下连最少段数都放不下（仅 inline 模式会触发）。
         """
+        if self.pack_mode == "static":
+            est = self.clip_count * clip_bytes(self.seg_duration) / 1024 / 1024
+            return (f"静态托管：{self.seg_duration:.0f}s × {self.n} 人 × 最多 "
+                    f"{self.segment_count} 段 = 最多 {self.clip_count} 片段，音频约 {est:.0f} MB"
+                    f"（不计入 HTML；由 Web 服务器按需发送，可覆盖全曲）")
         allowed = max_clip_count(self.seg_duration)
         limit = max_duration_for(self.n, SEG_COUNT_MIN)
         if allowed // self.n < SEG_COUNT_MIN:
@@ -252,6 +272,11 @@ def load_project(path: Path | None = None) -> Project:
         raise BuildError(f"segment.stride={stride:g}s 小于片段时长 "
                          f"{float(seg.get('duration', SEG_DURATION)):g}s，会让相邻段重叠")
 
+    pack = data.get("pack") or {}
+    pack_mode = str(pack.get("mode") or PACK_MODE).strip().lower()
+    if pack_mode not in PACK_MODES:
+        raise BuildError(f"pack.mode 只能是 {' 或 '.join(PACK_MODES)}，实际 {pack_mode!r}")
+
     return Project(
         title=str(work["title"]),
         composer=str(work["composer"]),
@@ -262,6 +287,7 @@ def load_project(path: Path | None = None) -> Project:
         seg_min_gap=float(seg.get("minGap", SEG_MIN_GAP)),
         seg_mode=mode,
         seg_stride=stride,
+        pack_mode=pack_mode,
         performers=performers,
         manual_segments=[float(t) for t in (seg.get("manual") or [])],
         presets=sorted({int(x) for x in (seg.get("presets") or [10, 15, 20, 25, 30])

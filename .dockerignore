@@ -1,0 +1,23 @@
+# 构建上下文只需要 dist/site 与 nginx.conf，其余一律不发给 Docker 守护进程
+.venv/
+work/
+.git/
+.gitignore
+.workbuddy/
+__pycache__/
+*.pyc
+build.log
+
+# 单文件内联版产物不用进镜像（那是 AirDrop 给 iPad 的那份）
+dist/同弦.html
+dist/bank.json
+
+# 构建脚本不需要进运行镜像
+build.py
+project.json
+ssm/
+web/
+tests/
+tools/
+SPEC.md
+docker-compose.yml

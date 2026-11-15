@@ -1,0 +1,9 @@
+# Python 依赖（3.11+）。系统层面还需要两个可执行文件：
+#   ffmpeg  —— S1 归一化、S4 切片、试听包拼接
+#   yt-dlp  —— S0 抓取 B 站音轨
+#     macOS: brew install ffmpeg yt-dlp
+librosa>=0.10
+numpy>=1.24
+scipy>=1.10
+soundfile>=0.12
+certifi>=2023.7

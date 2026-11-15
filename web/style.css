@@ -136,6 +136,12 @@ body {
 }
 
 /* ---------- 选段列表 ---------- */
+/* 乐章分组标题：几十段时靠它分段，别让用户在一长串里找位置 */
+.seghead {
+  font-size: 12.5px; color: var(--faint); letter-spacing: 0.04em;
+  padding: 12px 4px 2px;
+}
+.seghead:first-child { padding-top: 2px; }
 .segrow {
   appearance: none; width: 100%; text-align: left;
   display: flex; align-items: center; gap: 13px;

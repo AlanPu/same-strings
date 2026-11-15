@@ -288,8 +288,10 @@ def run(proj: Project, log: Log, force: bool = False) -> list[dict]:
     anchor_dur = audio.duration(anchor_pcm)
     need = proj.segment_count
     seg_dur = proj.seg_duration
-    log.kv(演奏家数=proj.n, 段数=need, 片段总数=proj.clip_count,
+    log.kv(演奏家数=proj.n, 目标段数=need, 片段总数上限=proj.clip_count,
            片段时长=f"{seg_dur}s",
+           打包形态="静态站点（音频外置，可覆盖全曲）" if proj.pack_mode == "static"
+                    else f"单文件内联（≤ {config.MAX_HTML_MB} MB）",
            切分方式="顺序（从乐曲开头连续切）" if proj.seg_mode == "sequential"
                     else f"分散（乐章配额 + 最小间隔 {proj.seg_min_gap:.0f}s）")
     if proj.seg_mode == "sequential":
@@ -363,9 +365,16 @@ def run(proj: Project, log: Log, force: bool = False) -> list[dict]:
         chosen = pick_sequential(cands, movements, need, seg_dur, anchor_dur,
                                  proj.seg_stride, log)
         gaps = np.diff([c["t0"] for c in chosen]) if len(chosen) > 1 else np.array([])
+        span = chosen[-1]["t0"] + seg_dur - chosen[0]["t0"] if chosen else 0.0
         log.kv(顺序切分=f"起点 {chosen[0]['t0']:.1f}s，共 {len(chosen)} 段，"
                         f"相邻间隔 {gaps.min():.1f}~{gaps.max():.1f}s" if len(gaps)
                else f"起点 {chosen[0]['t0']:.1f}s，共 {len(chosen)} 段")
+        log.kv(实际覆盖=f"{chosen[0]['t0']:.0f}s – {chosen[-1]['t0'] + seg_dur:.0f}s"
+                        f"（{span / 60:.1f} 分钟）",
+               实际片段数=f"{len(chosen)} × {proj.n} = {len(chosen) * proj.n}")
+        if len(chosen) < need:
+            log.line(f"  乐曲在 t={chosen[-1]['t0'] + seg_dur:.0f}s 处到头，"
+                     f"切满 {len(chosen)} 段（目标 {need} 段）")
     else:
         # ---- ②' 内容完整性（分散模式：先过滤出可用池，再按分数挑）----
         boundaries = [m["start"] for m in movements[1:]] + [m["end"] for m in movements[:-1]]
@@ -468,11 +477,16 @@ def _finalize(proj: Project, chosen: list[dict], movements: list[dict],
                for s in segments])
     log.kv(选中段数=len(segments), 片段总数=total)
 
-    cap = config.max_clip_count(proj.seg_duration)
-    log.metric("12 片段总数", total, f"≤ {cap}（体积预算）且 = {proj.n}×{len(segments)}",
-               total <= cap and total == proj.n * len(segments))
-    if total > cap:
-        raise BuildError(f"片段总数 {total} 超过体积预算上限 {cap}（{proj.seg_duration}s 片段）")
+    if proj.pack_mode == "static":
+        # 音频外置，不受 HTML 体积约束；这里只校验「片段数 = 人数 × 段数」
+        log.metric("12 片段总数", total, f"= {proj.n}×{len(segments)}（静态托管不限体积）",
+                   total == proj.n * len(segments))
+    else:
+        cap = config.max_clip_count(proj.seg_duration)
+        log.metric("12 片段总数", total, f"≤ {cap}（体积预算）且 = {proj.n}×{len(segments)}",
+                   total <= cap and total == proj.n * len(segments))
+        if total > cap:
+            raise BuildError(f"片段总数 {total} 超过体积预算上限 {cap}（{proj.seg_duration}s 片段）")
     if len(segments) < config.SEG_COUNT_MIN:
         raise BuildError(f"仅选出 {len(segments)} 段，少于下限 {config.SEG_COUNT_MIN}")
 
