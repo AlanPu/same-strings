@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         log.line(f"产物不全，跳过验收：{exc}")
         log.finish(False)
         return 1
-    verify.print_table(rows, log)
+    verify.print_table(rows, log, proj)
     log.report["acceptance"] = rows
     log.finish(ok)
     log.line(f"总耗时 {(time.time() - t_all) / 60:.1f} 分钟")

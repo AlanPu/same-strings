@@ -208,8 +208,15 @@ def run_node_sim(proj) -> dict | None:
         return None
 
 
-def print_table(rows: list[dict], log) -> None:
-    """打印 §10 总表。"""
+def print_table(rows: list[dict], log, proj) -> None:
+    """打印 §10 总表。
+
+    Args:
+        rows: ``run_checks`` 返回的逐项结果。
+        log: 日志对象。
+        proj: 项目配置。人工待办清单要按 ``pack.mode`` 分支给不同指引
+            （static 是开网页、inline 是开飞行模式），所以必须传进来。
+    """
     log.line("")
     log.line("===== §10 验收总表 =====")
     marks = {True: "通过", False: "失败", None: "待人工"}
@@ -257,7 +264,7 @@ if __name__ == "__main__":
     try:
         p = load_project()
         rows, ok = run_checks(p, lg)
-        print_table(rows, lg)
+        print_table(rows, lg, p)
         sys.exit(0 if ok else 1)
     except BuildError as exc:
         print(f"验收失败: {exc}")

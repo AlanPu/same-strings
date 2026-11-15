@@ -362,7 +362,11 @@
           '<button class="btn ghost" data-act="sound">提示音：' + (S.store.sound ? '开' : '关') + '</button>' +
         '</div>' +
         '<p class="tiny center">提示音 = 答对/答错各一声，只在练习时响（考试不出声）</p>' +
-        '<p class="tiny center">离线可用 · 无网络请求 · 无进度条与文件名</p>' +
+        // 这句必须按形态分支：inline 的音频内联在 HTML 里，确实能飞行模式答题；
+        // static 的音频是外置文件，断网就是打不开 —— 写成「离线可用」是假话。
+        '<p class="tiny center">' + (BANK.packMode === 'static'
+          ? '需联网加载音频 · 无第三方请求 · 无进度条与文件名'
+          : '离线可用 · 无网络请求 · 无进度条与文件名') + '</p>' +
       '</div>';
   }
 
