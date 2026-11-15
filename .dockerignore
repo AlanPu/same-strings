@@ -12,6 +12,13 @@ build.log
 dist/同弦.html
 dist/bank.json
 
+# 参照页（8 个原视频 + 对比音轨，约 3 GB）只在本机/局域网用，绝不进构建上下文。
+# 漏了这一条不会报错，但每次 build 都要把 3 GB 先发给守护进程，慢到像卡死。
+dist/ref
+
+# README 的截图，只在仓库里给 GitHub 用
+docs/
+
 # 构建脚本不需要进运行镜像
 build.py
 project.json
