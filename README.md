@@ -185,7 +185,41 @@ sudo sh -c 'set -e
   ls -l "$d"'
 ```
 
-DSM 续签之后要重新执行这条 —— 容器挂的是文件，不是 DSM 的引用。
+### 证书到期 / 续签之后（要手动同步一次）
+
+DSM 的 Let's Encrypt 证书会自己续签，但**容器挂的是拷贝出来的文件，不是 DSM 的引用**。
+续签之后必须重新同步，然后重启容器 —— nginx 只在启动时读证书，光换文件它不会察觉。
+
+```bash
+# 1) 重新拷贝（续签后内容变了，日期也变了）
+sudo sh -c 'set -e
+  d=/volume1/docker/same-strings/certs
+  cp /usr/syno/etc/certificate/system/default/fullchain.pem "$d/"
+  cp /usr/syno/etc/certificate/system/default/privkey.pem "$d/"
+  chmod 600 "$d"/*.pem
+  ls -l "$d"'
+
+# 2) 重启容器让它重读（不是重建，不用 --build）
+sudo /usr/local/bin/docker restart same-strings
+```
+
+怎么确认换上了：
+
+```bash
+# 看服务端现在这张证书的有效期，应该变成新的 notAfter
+echo | openssl s_client -connect 192.168.3.117:25001 -servername same.alanpu.top 2>/dev/null \
+  | openssl x509 -noout -dates
+
+# 看链是否仍然完整（应该是 3 张：叶子 → YR2 → Root YR → ISRG Root X1）
+echo | openssl s_client -connect 192.168.3.117:25001 -servername same.alanpu.top -showcerts 2>/dev/null \
+  | grep -c "BEGIN CERTIFICATE"
+```
+
+⚠️ 数证书张数必须加 `-showcerts`。不加的话 `openssl s_client` 只打印叶子证书，
+`grep -c` 得到 1，看着像「链断了」，其实是命令的默认行为 —— 这个坑我踩过一次。
+
+什么时候该跑：控制面板 → 安全性 → 证书里看得到到期日（Let's Encrypt 是 90 天）。
+到期前 DSM 会自行续签，但**续签不会通知容器**。当前这张的到期日是 2026-11-29。
 
 ### 内网 DNS（让域名指到 NAS）
 
