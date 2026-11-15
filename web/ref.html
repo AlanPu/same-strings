@@ -76,6 +76,31 @@ input[type=range]::-webkit-slider-thumb {
 }
 .marks { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--faint); margin-top: 2px; }
 
+/* 滑块两侧的按段跳转：40px 见方，拇指够得着，又不会把滑块挤得太短 */
+.steprow { display: flex; align-items: center; gap: 10px; }
+.steprow input[type=range] { flex: 1; min-width: 0; }
+.stepbtn {
+  flex: 0 0 40px; width: 40px; height: 40px; padding: 0;
+  appearance: none; background: var(--panel-2); color: var(--muted);
+  border: 1px solid var(--line-strong); border-radius: 11px;
+  font: inherit; font-size: 22px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.stepbtn:active { background: var(--gold-dim); color: var(--gold); border-color: var(--gold); }
+
+/* 「每次听几秒」：只放数字，单位在左边的标签里说一次，省宽度 */
+.durrow { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.durrow .tl-mov { flex: 0 0 auto; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  appearance: none; background: var(--panel); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px;
+  min-width: 40px; padding: 7px 11px;
+  font: inherit; font-size: 13.5px; line-height: 1.2; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.chip.on { background: var(--gold-dim); color: var(--gold); border-color: var(--gold); }
+
 .actions { display: flex; gap: 10px; margin-bottom: 14px; }
 .btn {
   flex: 1; appearance: none; background: var(--panel); color: var(--text);
@@ -121,10 +146,8 @@ input[type=range]::-webkit-slider-thumb {
   <video id="player" controls playsinline preload="metadata"></video>
   <p class="hint" id="skipNote"></p>
   <div class="list" id="rows"></div>
-  <p class="hint">点一位就开始播。8 个版本用的是同一份曲目，速度与处理各不相同 ——
-    听的时候留意：揉弦的密度、换弓的棱角、句尾怎么收。<br>
-    有的录像开头是十几秒到半分钟的静场（就位、观众入场），点开时会自动跳过，
-    并提示跳了多少；想从第一帧看就把进度条拖回 0:00。</p>
+  <p class="hint">点一位就开始播。8 个版本用的是同一份曲目，速度与处理各不相同 —— 听的时候留意：揉弦的密度、换弓的棱角、句尾怎么收。<br>
+    有的录像开头是十几秒到半分钟的静场（就位、观众入场），点开时会自动跳过，并提示跳了多少；想从第一帧看就把进度条拖回 0:00。</p>
 </section>
 
 <section id="tab-compare" hidden>
@@ -133,16 +156,24 @@ input[type=range]::-webkit-slider-thumb {
       <span class="tl-pos mono" id="posLabel">0:00</span>
       <span class="tl-mov" id="movLabel">第一乐章</span>
     </div>
-    <input type="range" id="pos" min="0" max="100" value="0" step="1">
+    <div class="steprow">
+      <button class="stepbtn" id="prevSeg" aria-label="上一段">‹</button>
+      <input type="range" id="pos" min="0" max="100" value="0" step="1">
+      <button class="stepbtn" id="nextSeg" aria-label="下一段">›</button>
+    </div>
     <div class="marks" id="marks"></div>
   </div>
+  <div class="durrow">
+    <span class="tl-mov">每次听几秒</span>
+    <div class="chips" id="segs"></div>
+  </div>
   <div class="actions">
-    <button class="btn primary" id="cycle">轮播 8 个版本（各 8 秒）</button>
+    <button class="btn primary" id="cycle">轮播 8 个版本</button>
     <button class="btn small" id="stop">停</button>
   </div>
   <div class="grid" id="picks"></div>
-  <p class="hint">拖动时间轴选一个位置，然后点任意一位 —— 播放的是<b>同一段乐句</b>在他那里的对应位置
-    （按对齐表换算，不是同一个秒数）。轮播会依次换上 8 个人，同一句话连听八遍。</p>
+  <p class="hint">拖动时间轴选一个位置，然后点任意一位 —— 播放的是<b>同一段乐句</b>在他那里的对应位置（按对齐表换算，不是同一个秒数）。轮播会依次换上 8 个人，同一句话连听八遍。<br>
+    「每次听几秒」决定听多长：调好秒数后，‹ › 就按同样的步长前后挪一段，位置会留在原地，可以一段一段接着往下捋。</p>
 </section>
 
 <script type="application/json" id="data">__DATA__</script>
@@ -153,7 +184,8 @@ input[type=range]::-webkit-slider-thumb {
   var P = D.performers;
   var W = D.warp;
   var STEP = D.warpStep || 0.5;
-  var SEG = 8;            // 对比模式每段听几秒
+  var SEG_PRESETS = [4, 6, 8, 12, 16, 20, 30];
+  var segSec = 8;         // 对比模式每段听几秒，chips 可改，记在本机
 
   function mmss(s) {
     s = Math.max(0, Math.round(s));
@@ -254,10 +286,45 @@ input[type=range]::-webkit-slider-thumb {
   var gapTimer = null;
   var cycle = false;
 
+  /* 时间轴按「秒」走，不再用 0–100 的百分比 —— 百分比一格约 16 秒，太粗，
+     ‹ › 也没法按你选的秒数精确挪。总长带小数时 max 取整，末端误差 < 1 秒。 */
+  pos.min = 0;
+  pos.max = Math.round(total);
+  pos.step = 1;
+  pos.value = 0;
+
   picks.innerHTML = P.map(function (p, i) {
     return '<button class="pick" data-i="' + i + '">' +
       '<span class="k mono">' + (i + 1) + '</span><span>' + esc(p.display) + '</span></button>';
   }).join('');
+
+  /* ---------- 每段听几秒 ---------- */
+  var segsEl = document.getElementById('segs');
+  function renderSegs() {
+    segsEl.innerHTML = SEG_PRESETS.map(function (s) {
+      return '<button class="chip' + (s === segSec ? ' on' : '') +
+        '" data-seg="' + s + '" aria-pressed="' + (s === segSec) + '">' + s + '</button>';
+    }).join('');
+    document.getElementById('cycle').textContent =
+      '轮播 ' + P.length + ' 个版本（各 ' + segSec + ' 秒）';
+  }
+  try {
+    var savedSeg = parseInt(localStorage.getItem('ss.segSec'), 10);
+    // 只认预设值：预设表改过之后，旧存档里的数字可能已经不在列表里
+    if (savedSeg && SEG_PRESETS.indexOf(savedSeg) >= 0) segSec = savedSeg;
+  } catch (e) { /* 隐私模式下 localStorage 会抛，忽略 */ }
+  renderSegs();
+
+  segsEl.addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-seg]');
+    if (!el) return;
+    var s = +el.getAttribute('data-seg');
+    if (s === segSec) return;
+    segSec = s;
+    renderSegs();
+    try { localStorage.setItem('ss.segSec', String(s)); } catch (e) { /* 同上 */ }
+    if (cur >= 0) playOne(cur, null);    // 正在听就按新时长从当前位置重来
+  });
 
   P.forEach(function (p) {
     var a = document.createElement('audio');
@@ -307,7 +374,7 @@ input[type=range]::-webkit-slider-thumb {
 
   function playOne(i, then) {
     stopAudio();
-    var t = (+pos.value / 100) * total;
+    var t = +pos.value;
     var a = audios[i];
     cur = i;
     Array.prototype.forEach.call(picks.children, function (c, k) {
@@ -320,7 +387,7 @@ input[type=range]::-webkit-slider-thumb {
       timer = setTimeout(function () {
         a.pause();
         if (then) then();
-      }, SEG * 1000);
+      }, segSec * 1000);
     };
     if (a.readyState >= 1) go();
     else a.addEventListener('loadedmetadata', function once() {
@@ -355,7 +422,7 @@ input[type=range]::-webkit-slider-thumb {
   document.getElementById('stop').addEventListener('click', stopAll);
 
   function showPos() {
-    var t = (+pos.value / 100) * total;
+    var t = +pos.value;
     posLabel.textContent = mmss(t);
     var m = D.movements.find(function (x) { return t >= x.start && t < x.end; });
     movLabel.textContent = (m && m.label) || '';
@@ -367,6 +434,19 @@ input[type=range]::-webkit-slider-thumb {
     if (cur >= 0) playOne(cur, null);
   });
   showPos();
+
+  /* ‹ › 按「你选的秒数」挪一段，而不是固定跳 30 秒 —— 这样听到哪、停在哪都和前一段对齐，
+     接着往下连听就是连续的曲子了。到两端就夹住，不会越界成负时间。 */
+  function stepBy(delta) {
+    var was = cur;                 // 轮播中手动挪段：先退出轮播，否则链路会错位
+    if (cycle) stopAll();
+    var t = Math.min(total, Math.max(0, (+pos.value) + delta));
+    pos.value = Math.round(t);
+    showPos();
+    if (was >= 0) playOne(was, null);
+  }
+  document.getElementById('prevSeg').addEventListener('click', function () { stepBy(-segSec); });
+  document.getElementById('nextSeg').addEventListener('click', function () { stepBy(+segSec); });
 
   /* ---------- tab ---------- */
   document.querySelector('.tabs').addEventListener('click', function (ev) {

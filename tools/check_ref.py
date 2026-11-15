@@ -138,6 +138,30 @@ def main() -> int:
                 if v > 0 and v >= audio.duration(config.DIR_PCM / f"{k}.wav") - 60]
         rows.append(("跳过点未越界", f"越界 {len(over)} 位", not over))
 
+    # ---- 5 对比页交互（按秒滑杆 + ‹ › 按段跳 + 时长 chips）-------------
+    # 这三处是纯前端逻辑，模板一改坏就静默失效，真机上才会发现按钮点了没反应。
+    # 所以只做「结构还在不在」的静态断言，取值合理性靠浏览器实测。
+    need = {'prevSeg': '上一段', 'nextSeg': '下一段', 'segs': '时长选项', 'pos': '时间轴'}
+    miss = [f'{k}（{v}）' for k, v in need.items() if f'id="{k}"' not in html]
+    rows.append(("对比页控件", "缺 " + "、".join(miss) if miss else "‹ › / 滑杆 / 时长 齐全",
+                 not miss))
+
+    # 滑杆必须按秒走。留一个 «/ 100» 就说明模板回退成了百分比版 —— 那样 ‹ › 挪的是一格
+    # 而不是「你选的秒数」，1 格约 16 秒，听感上完全对不上。
+    by_sec = "pos.max = Math.round(total)" in html and "/ 100) * total" not in html
+    rows.append(("滑杆按秒", "max=总秒数，无百分比换算" if by_sec else "仍是 0–100 百分比",
+                 by_sec))
+
+    # 默认时长必须真的在预设表里，否则 chips 一个都不高亮，用户看不出当前是几秒
+    m_pre = re.search(r'SEG_PRESETS\s*=\s*\[([\d,\s]+)\]', html)
+    m_seg = re.search(r'var segSec\s*=\s*(\d+)', html)
+    if m_pre and m_seg:
+        pre = [int(x) for x in m_pre.group(1).split(",") if x.strip()]
+        seg = int(m_seg.group(1))
+        rows.append(("默认时长", f"{seg} 秒，可选 {'/'.join(map(str, pre))}", seg in pre))
+    else:
+        rows.append(("默认时长", "找不到 SEG_PRESETS 或 segSec", False))
+
     width = max(len(r[0]) for r in rows)
     bad = sum(1 for *_, ok in rows if not ok)
     for name, detail, ok in rows:
