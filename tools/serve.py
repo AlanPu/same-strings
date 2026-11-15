@@ -23,6 +23,22 @@ ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 
 
+class QuietServer(ThreadingHTTPServer):
+    """客户端中途断线时不打堆栈。
+
+    播放器（尤其 iOS 拖动进度条时）会一次性发很多 Range 请求，拿到够用的字节就
+    abort 掉剩下的，于是服务端 write 时抛 BrokenPipeError / ConnectionResetError。
+    这是正常行为，不是错误 —— 但 ThreadingHTTPServer 默认会把整段 traceback
+    打到 stderr，一次加载刷几十屏，把真正的问题淹掉。
+    """
+
+    def handle_error(self, request, client_address) -> None:  # noqa: D102
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def lan_ip() -> str:
     """取本机在局域网里的地址（不会真的发包）。"""
     try:
@@ -43,7 +59,7 @@ def main() -> int:
         print(f"缺少 {site}/index.html，先跑构建")
         return 2
 
-    srv = ThreadingHTTPServer(
+    srv = QuietServer(
         ("0.0.0.0", port), lambda *a, **k: RangeHandler(*a, directory=str(site), **k))
     ip = lan_ip()
     print(f"站点目录 {site}")
