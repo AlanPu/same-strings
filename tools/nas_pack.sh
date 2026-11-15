@@ -59,7 +59,9 @@ IGNORE
 # NAS 上常见的 /volume1/docker/... 那种写法只是习惯，用相对路径同样能起。
 cat > "$PKG/.env" <<'ENV'
 # NAS 上暴露的端口（宿主机侧）。被占用就改这里。
-PORT=8080
+# 25001 练习器，25002 参照页；两个都改了记得重启容器。
+PORT=25001
+REF_PORT=25002
 # 参照页目录（宿主机侧），相对 compose 文件所在目录。
 # 8 个原视频 + 对比音轨约 3 GB，拷到 ./ref/ 下即可；不打算用就留空目录，/ref/ 返回 404。
 REF_DIR=./ref
@@ -123,5 +125,5 @@ say "── 在 NAS 上执行 ────────────────�
 say "  cd /volume1/docker && tar xzf $(basename "$OUT")"
 say "  cd $NAME && sudo ./start.sh          # 等价于 sudo docker compose up -d --build"
 say ""
-say "  然后 http://<NAS地址>:8080/        练习器"
-say "       http://<NAS地址>:8080/ref/    参照页（把 3 GB 拷进 ./ref/ 之后才有）"
+say "  然后 http://<NAS地址>:25001/       练习器"
+say "       http://<NAS地址>:25002/       参照页（把 3 GB 拷进 ./ref/ 之后才有）"

@@ -10,8 +10,12 @@ services:
     #   TARGET_PLATFORM=linux/arm64 docker compose up -d
     platform: ${TARGET_PLATFORM:-linux/amd64}
     ports:
-      # 左边是 NAS 上的端口，冲突了就改这个
-      - "${PORT:-8080}:80"
+      # 两个服务走两个端口，互不影响：
+      #   25001 → 容器的 80   → 练习器
+      #   25002 → 容器的 8081 → 参照页（没挂载 ref/ 就是 404，练习器不受影响）
+      # 想换端口就改 .env 里的 PORT / REF_PORT，不用改这个文件。
+      - "${PORT:-25001}:80"
+      - "${REF_PORT:-25002}:8081"
     volumes:
       # 参照页（8 个原视频 + 对比音轨，约 3.1 GB）不进镜像，而是从宿主机目录挂进来。
       # 这样镜像仍然只有 150 MB 左右，视频换了也不用重新 build。

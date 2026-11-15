@@ -131,12 +131,31 @@ ssh nas 'cd /volume1/docker/same-strings && sudo /usr/local/bin/docker compose u
 
 首次 build 会拉 `nginx:1.27-alpine`（约 20 MB），NAS 要能上网。
 
-默认映射 `8080:80`，打开 `http://<NAS 地址>:8080/`。端口和参照页目录都走 `.env`：
+两个服务走两个端口，互不干扰：
+
+| NAS 上的端口 | 容器内 | 是什么 |
+|---|---|---|
+| **25001** | 80 | 练习器（`dist/site`，打进镜像） |
+| **25002** | 8081 | 参照页（`dist/ref`，从挂载目录读） |
+
+```bash
+http://<NAS 地址>:25001/     # 练习器
+http://<NAS 地址>:25002/     # 参照页
+```
+
+端口和参照页目录都走 `.env`：
 
 ```
-PORT=9000
+PORT=25001
+REF_PORT=25002
 REF_DIR=/volume1/docker/same-strings/ref
 ```
+
+为什么拆成两个端口而不是 80 加 `/ref/` 子路径：参照页里的引用全是相对路径
+（`video/xxx.mp4`、`audio/xxx.m4a`），挂在 `/ref/` 下就得额外维护
+`/ref/video/`、`/ref/audio/` 两份 MIME 规则，和练习器的 `/audio/` 规则重复。
+两处一旦漂移，症状是「只有某一个页面放不出声」，特别难查。现在是各自一个根，
+`/video/`、`/audio/` 的规则全站只有一份。
 
 `nas_pack.sh` 写在包里的 `.env` 用的是相对路径（`REF_DIR=./ref`）—— 解压目录自己就是项目根，
 参照页就在旁边，不用改任何绝对路径就能起。
@@ -177,7 +196,8 @@ REF_DIR=/volume1/docker/same-strings/ref docker compose up -d --no-build
 
 ### 参照页挂载（可选）
 
-参照页的 3.1 GB 视频**不进镜像**，而是从宿主机目录挂到容器的 `/ref/`：
+参照页的 3.1 GB 视频**不进镜像**，而是从宿主机目录挂成参照页服务的**根目录**
+（`/usr/share/nginx/html/ref`，也就是 25002 那个 server 的 `root`）：
 
 ```yaml
 volumes:
@@ -199,17 +219,19 @@ tar --no-xattrs -C dist -cf - ref | ssh nas 'tar -xf - -C /volume1/docker/same-s
 
 | 地址 | 是什么 |
 |---|---|
-| `http://<NAS>:8080/` | 练习器（dist/site，在镜像里） |
-| `http://<NAS>:8080/ref/` | 参照页（来自挂载目录） |
+| `http://<NAS>:25001/` | 练习器（`dist/site`，在镜像里） |
+| `http://<NAS>:25002/` | 参照页（来自挂载目录） |
 
 两个细节值得知道：
 
-- **`/ref` 不带斜杠会 301 到 `/ref/`**。因为参照页里的 `video/xxx.mp4`、`audio/xxx.m4a`
-  都是相对路径，少一级斜杠就会解析到 `/video/…` 去，全部 404。
-- **`/ref/` 用 `=404` 而不是回落到 `/index.html`**。挂载目录漏了的时候，回落会让
-  `/ref/` 静默返回练习器首页，看起来像「参照页坏了」，其实是「没挂载」。
+- **参照页单独占一个端口，所以它是根路径**，页面里 `video/xxx.mp4` 直接解析成 `/video/…`。
+  早先挂在 `/ref/` 子路径时，少写一个结尾斜杠就会解析到上一级、全部 404 ——
+  现在这个坑从结构上消失了。
+- **参照页的 `location /` 用 `=404` 而不是回落到 `index.html`**。挂载目录漏了的时候，
+  回落会让根路径静默返回一个空壳，看起来像「参照页坏了」，其实是「没挂载」。
 
-不想用参照页就把那段 `volumes` 删掉，练习器照常工作。
+不想用参照页就删掉 compose 里那段 `volumes` 和 `25002` 那行端口，练习器照常工作
+（不会因为「参照页没挂」而连带 404）。
 
 `nginx.conf` 里有三件事是必须的，改的时候别动：
 
@@ -241,7 +263,7 @@ tar --no-xattrs -C dist -cf - ref | ssh nas 'tar -xf - -C /volume1/docker/same-s
 .venv/bin/python tools/fetch_ref.py        # 下 8 个原视频（H.264，取各源最高分辨率）
 .venv/bin/python tools/make_ref.py         # 生成 dist/ref/
 .venv/bin/python tools/check_ref.py        # 自洽检查（换算表 / faststart / 数据一致）
-.venv/bin/python tools/serve.py 8081 ref   # 起服务，iPad 打开 http://<Mac IP>:8081/
+.venv/bin/python tools/serve.py 25002 ref  # 起服务，iPad 打开 http://<Mac IP>:25002/
 ```
 
 `fetch_ref.py` 是幂等的：先问 yt-dlp「这个源最高给到多少」，再和本地已有文件比对，

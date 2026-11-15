@@ -16,7 +16,7 @@ COPY nginx.conf /etc/nginx/conf.d/same-strings.conf
 # 若 dist/site 不存在，这一步会直接失败并报错 —— 比在浏览器里看到空白页好排查
 COPY dist/site /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 80 8081
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q -O /dev/null http://127.0.0.1/healthz || exit 1

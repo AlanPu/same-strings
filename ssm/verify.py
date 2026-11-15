@@ -246,7 +246,7 @@ def print_table(rows: list[dict], log, proj) -> None:
                      + "、".join(p.name for p in packs[:3]) + (" …" if len(packs) > 3 else ""))
             log.line(f"     都在 {config.DIR_CHECK}，重新生成：python tools/make_listening.py 6")
         if proj.pack_mode == "static":
-            log.line("  #8/#11 真机：浏览器打开 http://<NAS 地址>:8080/ 连答 10 题；"
+            log.line("  #8/#11 真机：浏览器打开 http://<NAS 地址>:25001/ 连答 10 题；"
                      "再关掉 Safari 网站数据重开，确认仍可答题")
             log.line("     本形态断网即不可用（这是换取覆盖全曲的代价），#10「无网络请求」"
                      "已不适用，改为「无第三方域名」")

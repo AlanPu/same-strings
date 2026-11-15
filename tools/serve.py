@@ -5,8 +5,8 @@
 包括 Range/206 和 audio/mp4，所以能提前暴露「iOS 播不动」这类问题。
 
 用法：
-    .venv/bin/python tools/serve.py                # dist/site，8080
-    .venv/bin/python tools/serve.py 8081 ref       # dist/ref，8081
+    .venv/bin/python tools/serve.py                # dist/site，25001
+    .venv/bin/python tools/serve.py 25002 ref      # dist/ref，25002
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def lan_ip() -> str:
 
 
 def main() -> int:
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 25001
     name = sys.argv[2] if len(sys.argv) > 2 else "site"
     site = DIST / name
     if not (site / "index.html").exists():
