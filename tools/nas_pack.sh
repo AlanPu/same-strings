@@ -39,13 +39,18 @@ mkdir -p "$PKG/dist"
 # 传上去只会让 150 MB 变成几百 MB，还得等。
 cp Dockerfile nginx.conf docker-compose.yml "$PKG/"
 cp -R dist/site "$PKG/dist/site"
+# entrypoint 脚本会被 Dockerfile COPY 进镜像，必须在构建上下文里；
+# 续签检查脚本是给 DSM 任务计划用的宿主机脚本，放包根方便直接填路径。
+cp -R entrypoint.d "$PKG/entrypoint.d"
+cp tools/renew_cert_check.sh "$PKG/renew_cert_check.sh"
+chmod +x "$PKG/renew_cert_check.sh"
 
 # 参照页 3 GB 不进包（走共享目录），但留一个空目录，省得用户在 NAS 上还要 mkdir，
 # 也避免 compose 把「目录不存在」当成 bug 去查。
 mkdir -p "$PKG/ref"
 
-# 证书目录。空着也能起容器吗？不能 —— nginx 找不到 fullchain.pem 会直接退出，
-# 所以这里只建目录并在结尾提示必须放文件，不假装它能跑。
+# 证书不再需要手工放：容器启动时自己从 DSM 证书库同步。
+# 留一个空 certs/ 只是给「不想挂 DSM、想自己放证书」的场景当备用（DSM_CERT_DIR=./certs）。
 mkdir -p "$PKG/certs"
 
 # ⚠️ 包内必须自带 .dockerignore。仓库那份写的是 `dist/ref`（本机布局），
@@ -68,8 +73,9 @@ cat > "$PKG/.env" <<'ENV'
 # 25001 练习器，25002 参照页（协议是 HTTPS）；两个都改了记得重启容器。
 PORT=25001
 REF_PORT=25002
-# 证书目录（宿主机侧），里面要有 fullchain.pem 和 privkey.pem
-CERT_DIR=./certs
+# 证书来自 DSM 证书库，compose 会把它只读挂到容器的 /dsm-certs；
+# 默认路径就是 DSM 的 system/default，通常不用改。
+# DSM_CERT_DIR=/usr/syno/etc/certificate/system/default
 # 参照页目录（宿主机侧），相对 compose 文件所在目录。
 # 8 个原视频 + 对比音轨约 3 GB，拷到 ./ref/ 下即可；不打算用就留空目录，/ref/ 返回 404。
 REF_DIR=./ref
@@ -114,7 +120,9 @@ COPYFILE_DISABLE=1 tar $TAR_OPTS "$OUT" -C "$TMP" "$NAME"
 BAD=$(COPYFILE_DISABLE=1 tar -tzf "$OUT" | grep -cE '(^|/)\._|\.DS_Store$' || true)
 [ "$BAD" -eq 0 ] || die "包里有 $BAD 个 macOS 元数据文件（._* 或 .DS_Store）"
 
-for f in Dockerfile nginx.conf docker-compose.yml .env start.sh dist/site/index.html dist/site/bank.json; do
+for f in Dockerfile nginx.conf docker-compose.yml .env start.sh \
+         entrypoint.d/40-sync-dsm-cert.sh renew_cert_check.sh \
+         dist/site/index.html dist/site/bank.json; do
     COPYFILE_DISABLE=1 tar -tzf "$OUT" | grep -qx "$NAME/$f" || die "包里缺 $f"
 done
 
@@ -133,7 +141,7 @@ say "── 在 NAS 上执行 ────────────────�
 say "  cd /volume1/docker && tar xzf $(basename "$OUT")"
 say "  cd $NAME && sudo ./start.sh          # 等价于 sudo docker compose up -d --build"
 say ""
-say "  ⚠️ 起容器前必须把证书放好：certs/fullchain.pem + certs/privkey.pem"
+say "  证书自动从 DSM 证书库同步，不用手工拷贝；记得在 DSM 任务计划里挂上 renew_cert_check.sh（每周一次）"
 say ""
 say "  然后 https://<域名>:25001/      练习器"
 say "       https://<域名>:25002/      参照页（把 3 GB 拷进 ./ref/ 之后才有）"

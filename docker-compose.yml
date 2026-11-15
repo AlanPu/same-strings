@@ -28,10 +28,11 @@ services:
       #
       # 不想用参照页就把这段整个删掉 —— 练习器照常工作，/ref/ 返回 404。
       - "${REF_DIR:-./dist/ref}:/usr/share/nginx/html/ref:ro"
-      # 证书（fullchain.pem + privkey.pem）只在宿主机上，绝不进镜像。
-      # 只读挂载：即使容器被攻破也改不动私钥。
-      # 文件权限保持 600 root:root 即可 —— nginx 主进程以 root 起，能读；worker 不需要读。
-      - "${CERT_DIR:-./certs}:/etc/nginx/certs:ro"
+      # 直接挂 DSM 的证书库（不是拷出来的副本）：续签后内容实时可见。
+      # 容器启动时由 /docker-entrypoint.d/40-sync-dsm-cert.sh 拷到 /etc/nginx/certs。
+      # 只读挂载；证书文件是 root:r--------，容器主进程以 root 启动才读得到。
+      # 本机没有 DSM 时可用 DSM_CERT_DIR=./certs 指向自己的证书目录。
+      - "${DSM_CERT_DIR:-/usr/syno/etc/certificate/system/default}:/dsm-certs:ro"
     healthcheck:
       test: ["CMD", "wget", "-q", "--no-check-certificate", "-O", "/dev/null", "https://127.0.0.1/healthz"]
       interval: 30s

@@ -12,7 +12,8 @@ build.log
 dist/同弦.html
 dist/bank.json
 
-# 证书私钥绝对不能进构建上下文（也不该进任何镜像层）
+# 证书私钥绝对不能进构建上下文（也不该进任何镜像层）。
+# entrypoint.d/ 里只有同步脚本，必须留在上下文里供 Dockerfile COPY。
 certs/
 
 # 参照页（8 个原视频 + 对比音轨，约 3 GB）走 volumes 挂载进容器（见 docker-compose.yml），

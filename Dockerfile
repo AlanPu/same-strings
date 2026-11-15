@@ -16,6 +16,14 @@ COPY nginx.conf /etc/nginx/conf.d/same-strings.conf
 # 若 dist/site 不存在，这一步会直接失败并报错 —— 比在浏览器里看到空白页好排查
 COPY dist/site /usr/share/nginx/html
 
+# 证书目录（容器内的可写位置）。DSM 的证书库只读挂在 /dsm-certs，
+# 由下面的 entrypoint 脚本在每次启动时拷进来 —— 镜像里不含任何私钥。
+RUN mkdir -p /etc/nginx/certs
+COPY entrypoint.d/40-sync-dsm-cert.sh /docker-entrypoint.d/40-sync-dsm-cert.sh
+# 官方 entrypoint 会「Ignoring ... not executable」跳过没有 +x 的 *.sh：
+# 别指望 COPY 保留宿主的可执行位，也别依赖 COPY --chmod（老 builder 不支持）
+RUN chmod +x /docker-entrypoint.d/40-sync-dsm-cert.sh
+
 EXPOSE 443 8443
 
 # 容器内只能走 127.0.0.1，和证书上的域名对不上，所以必须跳过证书校验，

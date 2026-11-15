@@ -155,71 +155,86 @@ CERT_DIR=/volume1/docker/same-strings/certs
 容器内监听 443 / 8443 而不是 80 / 8081，是因为 **DSM 自己占着宿主机的 443**（登录页）。
 宿主机侧仍映射到 25001 / 25002，所以换了协议之后端口号没变，只是 URL 里的 `http` → `https`。
 
-### HTTPS 证书
+### HTTPS 证书：从 DSM 自动同步，不需要人记
 
-证书**不进镜像**，从宿主机只读挂载到 `/etc/nginx/certs`：
+**结论先说**：证书续签不再需要手工 `cp` / `restart`。DSM 续签后由定时任务自动同步并
+`nginx -s reload`（零中断）；容器每次启动也会自己重新拷一遍。下面那套手动命令只作兜底。
+
+#### 怎么串起来的
+
+直接把 **DSM 证书库本身**只读挂进容器，而不是挂一份拷出来的副本：
 
 ```yaml
 volumes:
-  - "${CERT_DIR:-./certs}:/etc/nginx/certs:ro"
+  - "${DSM_CERT_DIR:-/usr/syno/etc/certificate/system/default}:/dsm-certs:ro"
 ```
 
-目录里必须有两个文件，缺一个 nginx 就直接退出（不是降级到 http）：
+`nginx.conf` 里仍写 `/etc/nginx/certs/fullchain.pem` 和 `privkey.pem` —— 那是容器内的
+可写目录，由 `entrypoint.d/40-sync-dsm-cert.sh` 在**每次启动时**从 `/dsm-certs` 拷进去。
 
-| 文件 | 是什么 |
+拷贝这一步不只是为了权限（容器主进程本来就是 root，能读 `root:r--------`）：
+更重要的是给「nginx 实际加载的是哪一张证书」留一个可比对的对象，
+也让 `nginx.conf` 不必知道 DSM 的内部路径。官方镜像的 entrypoint 会在 `exec nginx`
+之前按 `sort -V` 顺序跑 `/docker-entrypoint.d/*.sh`，两个硬条件：
+
+- **只在 `$1` 是 `nginx` / `nginx-debug` 时跑** —— compose 没有覆盖 `command`，满足；
+- **脚本必须有可执行位**，否则 entrypoint 直接打 `Ignoring ... not executable` 跳过。
+  所以 Dockerfile 里有专门的 `RUN chmod +x`，不要指望 `COPY` 保留宿主机的权限位。
+
+私钥全程不进镜像层：`.dockerignore` 排掉了 `certs/`，DSM 目录只是只读挂载。
+
+#### 续签后怎么自动生效
+
+`tools/renew_cert_check.sh` 比对三个指纹，按需做最小动作：
+
+| 情况 | 动作 |
 |---|---|
-| `fullchain.pem` | 证书链：叶子证书 + 中间证书。**只给叶子证书，iOS 会以「链不完整」拒连** |
-| `privkey.pem` | 私钥 |
+| 宿主机 == 容器内挂载 == nginx 已加载 | 无变化，安静退出 |
+| 续签了，但 nginx 还在用旧的 | 重新跑同步脚本 + `nginx -s reload`，**零中断** |
+| 宿主机 != 容器内挂载 | bind mount 钉在旧 inode 上，必须 `--force-recreate` 重建挂载 |
 
-`.dockerignore` 里排掉了 `certs/` —— 镜像会被推到仓库或私有 registry，
-私钥一旦进过某一层，就永远在里面（删掉也还在历史层里）。
+第三种是这个方案唯一会**静默失效**的地方：如果 DSM 续签时把整个 `system/default`
+目录替换掉，而不是改目录里的文件，已建立的 mount 仍指向旧 inode，
+只 reload 会一直把旧证书重新拷一遍，直到过期当天才被发现。所以必须查这一条。
 
-证书直接从 DSM 的证书库取（`*.alanpu.top` 由 DSM 续签，跟着走就不用单独维护）：
+装到 DSM：控制面板 → 任务计划 → 新增 → 计划的任务 → 用户定义的脚本
 
-```bash
-sudo sh -c 'set -e
-  d=/volume1/docker/same-strings/certs
-  cp /usr/syno/etc/certificate/system/default/fullchain.pem "$d/"
-  cp /usr/syno/etc/certificate/system/default/privkey.pem "$d/"
-  chmod 600 "$d"/*.pem
-  ls -l "$d"'
+```
+用户：root                         （要读 root:r-------- 的证书、要调 docker）
+计划：每周一次，例如周日 04:00     （LE 在到期前约 30 天就续签，每周足够）
+命令：/volume1/docker/same-strings/renew_cert_check.sh
 ```
 
-### 证书到期 / 续签之后（要手动同步一次）
+`nas_pack.sh` 会把这个脚本放在解压目录的根下。任务计划以 root 运行，
+`/usr/local/bin/docker` 的全路径脚本里已经写死，不依赖 DSM 那个残缺的 PATH。
 
-DSM 的 Let's Encrypt 证书会自己续签，但**容器挂的是拷贝出来的文件，不是 DSM 的引用**。
-续签之后必须重新同步，然后重启容器 —— nginx 只在启动时读证书，光换文件它不会察觉。
+#### 手动兜底（一般不用）
+
+万一定时任务没配、或想立刻验一次：
 
 ```bash
-# 1) 重新拷贝（续签后内容变了，日期也变了）
-sudo sh -c 'set -e
-  d=/volume1/docker/same-strings/certs
-  cp /usr/syno/etc/certificate/system/default/fullchain.pem "$d/"
-  cp /usr/syno/etc/certificate/system/default/privkey.pem "$d/"
-  chmod 600 "$d"/*.pem
-  ls -l "$d"'
-
-# 2) 重启容器让它重读（不是重建，不用 --build）
-sudo /usr/local/bin/docker restart same-strings
+# 重新同步 + 热加载，不用重建容器
+sudo /usr/local/bin/docker exec same-strings /docker-entrypoint.d/40-sync-dsm-cert.sh
+sudo /usr/local/bin/docker exec same-strings nginx -s reload
 ```
 
-怎么确认换上了：
+确认换上了：
 
 ```bash
-# 看服务端现在这张证书的有效期，应该变成新的 notAfter
+# 到期日应该变成新的 notAfter
 echo | openssl s_client -connect 192.168.3.117:25001 -servername same.alanpu.top 2>/dev/null \
   | openssl x509 -noout -dates
 
-# 看链是否仍然完整（应该是 3 张：叶子 → YR2 → Root YR → ISRG Root X1）
+# 链是否仍完整，应输出 3
 echo | openssl s_client -connect 192.168.3.117:25001 -servername same.alanpu.top -showcerts 2>/dev/null \
   | grep -c "BEGIN CERTIFICATE"
 ```
 
-⚠️ 数证书张数必须加 `-showcerts`。不加的话 `openssl s_client` 只打印叶子证书，
+⚠️ 数证书张数**必须加 `-showcerts`**。不加的话 `openssl s_client` 只打印叶子证书，
 `grep -c` 得到 1，看着像「链断了」，其实是命令的默认行为 —— 这个坑我踩过一次。
 
-什么时候该跑：控制面板 → 安全性 → 证书里看得到到期日（Let's Encrypt 是 90 天）。
-到期前 DSM 会自行续签，但**续签不会通知容器**。当前这张的到期日是 2026-11-29。
+当前这张证书 2026-11-29 到期（Let's Encrypt 90 天）。到期日在
+控制面板 → 安全性 → 证书里看得到。
 
 ### 内网 DNS（让域名指到 NAS）
 
