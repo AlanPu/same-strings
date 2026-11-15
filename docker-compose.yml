@@ -6,7 +6,18 @@ services:
     restart: unless-stopped
     ports:
       # 左边是 NAS 上的端口，冲突了就改这个
-      - "8080:80"
+      - "${PORT:-8080}:80"
+    volumes:
+      # 参照页（8 个原视频 + 对比音轨，约 3.1 GB）不进镜像，而是从宿主机目录挂进来。
+      # 这样镜像仍然只有 150 MB 左右，视频换了也不用重新 build。
+      #
+      # 默认指向本机的 ./dist/ref，在 NAS 上通常要改成共享文件夹的绝对路径，例如：
+      #   Synology  REF_DIR=/volume1/docker/same-strings/ref
+      #   群晖/威联通也常见 /share/… 或 /mnt/…，按你自己的共享目录填
+      # 可以在同目录的 .env 里写一行 REF_DIR=…，或直接 export 后 compose。
+      #
+      # 不想用参照页就把这段整个删掉 —— 练习器照常工作，/ref/ 返回 404。
+      - "${REF_DIR:-./dist/ref}:/usr/share/nginx/html/ref:ro"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
       interval: 30s

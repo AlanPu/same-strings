@@ -104,7 +104,46 @@ python3 -m venv .venv
 docker compose up -d --build              # 再在 NAS 上起容器
 ```
 
-默认映射 `8080:80`，打开 `http://<NAS 地址>:8080/`。
+默认映射 `8080:80`，打开 `http://<NAS 地址>:8080/`。端口和参照页目录都走环境变量：
+
+```bash
+PORT=9000 REF_DIR=/volume1/docker/same-strings/ref docker compose up -d
+```
+
+或者在同目录写一个 `.env`：
+
+```
+PORT=9000
+REF_DIR=/volume1/docker/same-strings/ref
+```
+
+不想把整个仓库拷到 NAS 的话，build 只需要三样东西：`Dockerfile`、`nginx.conf`、
+`dist/site/`（149 MB）。`build.py`、`ssm/`、`web/`、`tools/` 都不参与运行镜像。
+
+### 参照页挂载（可选）
+
+参照页的 3.1 GB 视频**不进镜像**，而是从宿主机目录挂到容器的 `/ref/`：
+
+```yaml
+volumes:
+  - "${REF_DIR:-./dist/ref}:/usr/share/nginx/html/ref:ro"
+```
+
+这样改视频、换画质都不用重新 build 镜像。挂上之后：
+
+| 地址 | 是什么 |
+|---|---|
+| `http://<NAS>:8080/` | 练习器（dist/site，在镜像里） |
+| `http://<NAS>:8080/ref/` | 参照页（来自挂载目录） |
+
+两个细节值得知道：
+
+- **`/ref` 不带斜杠会 301 到 `/ref/`**。因为参照页里的 `video/xxx.mp4`、`audio/xxx.m4a`
+  都是相对路径，少一级斜杠就会解析到 `/video/…` 去，全部 404。
+- **`/ref/` 用 `=404` 而不是回落到 `/index.html`**。挂载目录漏了的时候，回落会让
+  `/ref/` 静默返回练习器首页，看起来像「参照页坏了」，其实是「没挂载」。
+
+不想用参照页就把那段 `volumes` 删掉，练习器照常工作。
 
 `nginx.conf` 里有三件事是必须的，改的时候别动：
 
@@ -113,6 +152,9 @@ docker compose up -d --build              # 再在 NAS 上起容器
 2. **支持 Range / 206**。Safari 打开音频会先发 Range 探测再续取，
    只回 200 全量会表现为「点了播放没反应」。
 3. **不要 gzip m4a**。AAC 已经压过，二次压缩会破坏 Range 分段。
+
+视频同理，只是换成了 `video/mp4`——iOS 对 `<video>` 的 MIME 比 `<audio>` 更挑，
+落到 octet-stream 会一直转圈不出画面。所以 `/ref/video/` 和 `/ref/audio/` 各有一份声明。
 
 ⚠️ 改 `nginx.conf` 时注意 `add_header` 的继承规则：**子块里只要出现一个 `add_header`，
 就不再继承父级的任何一个**。所以 `location /audio/` 那里必须自己再声明一次缓存策略，
@@ -171,7 +213,8 @@ avc1 30080，默认排序给了 720p 的 30064）。正解是 `-S "res:1080,vcod
 按分辨率排序 + 锁 H.264。
 
 尺寸上有个预期：`dist/ref` 合计约 3 GB（视频 2.9 GB + 对比音轨 159 MB），
-所以它不进仓库、也不进 Docker 镜像，只在本机/局域网用。
+所以它不进仓库、也不进 Docker 镜像。要在 iPad 上不依赖 Mac 也能看，
+把它挂到 NAS 容器的 `/ref/` 就行（见上一节「参照页挂载」）。
 
 ## 管线
 
@@ -298,6 +341,7 @@ dist/            产物（不入库）
 - **static 形态没有离线**。这是换取「覆盖全曲」付出的代价，不是疏漏。
 - **顺序模式一次 53 题**。全曲切了 53 段，一轮走完确实长；中途可以「退出」，
   也可以到「自己选段」里只练某几段。
-- **参照页不进镜像**。3 GB 视频只为局域网看，塞进 NAS 镜像没有意义。
+- **参照页不进镜像，但可以挂进去**。3.1 GB 视频塞进镜像没有意义（每次 build 都要重传
+  一遍），所以走 `volumes` 挂到 `/ref/`：镜像 150 MB，视频换了不用重新构建。
 - **音频不入库**。片段来自 B 站，版权属原演奏者与唱片公司；仓库只保留
   `project.json` 里的 bvid 引用，构建时现抓。
