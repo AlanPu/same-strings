@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#111110">
+<title>同弦 · 参照</title>
+<style>
+:root {
+  --bg: #111110;
+  --panel: #1a1917;
+  --panel-2: #211f1c;
+  --line: #2c2a26;
+  --line-strong: #3d3a34;
+  --text: #ece8df;
+  --muted: #a09a8e;
+  --faint: #6e685e;
+  --gold: #c8a24a;
+  --gold-dim: #3a3020;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  padding: max(18px, env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
+  max-width: 880px; margin: 0 auto;
+}
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; letter-spacing: 0.01em; }
+.sub { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+.mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+.tabs button {
+  flex: 1; appearance: none; background: var(--panel); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 12px; padding: 11px 8px;
+  font: inherit; font-size: 15px; cursor: pointer;
+}
+.tabs button.on { background: var(--gold-dim); color: var(--gold); border-color: var(--gold); }
+
+video { width: 100%; border-radius: 14px; background: #000; display: block; }
+
+.list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.row {
+  appearance: none; width: 100%; text-align: left; display: flex; align-items: center;
+  gap: 13px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 13px; padding: 12px 14px; color: var(--text); font: inherit; cursor: pointer;
+}
+.row:active { background: var(--panel-2); border-color: var(--line-strong); }
+.row.on { border-color: var(--gold); background: var(--gold-dim); }
+.no {
+  width: 30px; height: 30px; flex: 0 0 30px; border-radius: 9px;
+  border: 1px solid var(--line-strong); color: var(--muted); font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+}
+.row.on .no { border-color: var(--gold); color: var(--gold); }
+.name { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.name b { font-weight: 500; font-size: 16px; }
+.name i { font-style: normal; font-size: 12.5px; color: var(--faint); }
+.dur { color: var(--faint); font-size: 12.5px; }
+
+.timeline { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+.tl-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.tl-pos { font-size: 20px; color: var(--gold); }
+.tl-mov { font-size: 12.5px; color: var(--muted); }
+input[type=range] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 30px; background: transparent; margin: 0;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px; background: var(--line-strong);
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--gold); margin-top: -8px; border: none;
+}
+.marks { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+
+.actions { display: flex; gap: 10px; margin-bottom: 14px; }
+.btn {
+  flex: 1; appearance: none; background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+  font: inherit; font-size: 15px; cursor: pointer;
+}
+.btn.primary { background: var(--gold-dim); color: var(--gold); border-color: var(--gold); }
+.btn:active { background: var(--panel-2); }
+.btn.small { flex: 0 0 auto; padding: 9px 14px; font-size: 13.5px; }
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pick {
+  appearance: none; background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 12px; padding: 14px 12px;
+  font: inherit; font-size: 15px; cursor: pointer; text-align: left;
+  display: flex; align-items: center; gap: 10px;
+}
+.pick:active { background: var(--panel-2); }
+.pick.on { border-color: var(--gold); background: var(--gold-dim); color: var(--gold); }
+.pick .k {
+  width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line-strong);
+  display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--muted);
+}
+.pick.on .k { border-color: var(--gold); color: var(--gold); }
+
+.hint { color: var(--faint); font-size: 12.5px; line-height: 1.6; margin: 14px 0 0; }
+@media (max-width: 560px) {
+  .grid { grid-template-columns: 1fr; }
+  h1 { font-size: 20px; }
+}
+</style>
+</head>
+<body>
+<h1>同弦 · 参照</h1>
+<p class="sub" id="sub"></p>
+
+<div class="tabs">
+  <button data-tab="listen" class="on">完整听</button>
+  <button data-tab="compare">同一句对比</button>
+</div>
+
+<section id="tab-listen">
+  <video id="player" controls playsinline preload="metadata"></video>
+  <div class="list" id="rows"></div>
+  <p class="hint">点一位就开始播。8 个版本用的是同一份曲目，速度与处理各不相同 ——
+    听的时候留意：揉弦的密度、换弓的棱角、句尾怎么收。</p>
+</section>
+
+<section id="tab-compare" hidden>
+  <div class="timeline">
+    <div class="tl-head">
+      <span class="tl-pos mono" id="posLabel">0:00</span>
+      <span class="tl-mov" id="movLabel">第一乐章</span>
+    </div>
+    <input type="range" id="pos" min="0" max="100" value="0" step="1">
+    <div class="marks" id="marks"></div>
+  </div>
+  <div class="actions">
+    <button class="btn primary" id="cycle">轮播 8 个版本（各 8 秒）</button>
+    <button class="btn small" id="stop">停</button>
+  </div>
+  <div class="grid" id="picks"></div>
+  <p class="hint">拖动时间轴选一个位置，然后点任意一位 —— 播放的是<b>同一段乐句</b>在他那里的对应位置
+    （按对齐表换算，不是同一个秒数）。轮播会依次换上 8 个人，同一句话连听八遍。</p>
+</section>
+
+<script type="application/json" id="data">__DATA__</script>
+<script>
+(function () {
+  'use strict';
+  var D = JSON.parse(document.getElementById('data').textContent);
+  var P = D.performers;
+  var W = D.warp;
+  var STEP = D.warpStep || 0.5;
+  var SEG = 8;            // 对比模式每段听几秒
+
+  function mmss(s) {
+    s = Math.max(0, Math.round(s));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+  function esc(x) { return String(x).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  /* 锚点时间 → 该演奏家音轨上的时间（线性插值，与后端 warp.at 一致） */
+  function at(pid, t) {
+    var w = W[pid];
+    if (!w || !w.map || !w.map.length) return t;
+    var x = t / STEP;
+    var i = Math.floor(x);
+    if (i < 0) return w.map[0];
+    if (i >= w.map.length - 1) return w.map[w.map.length - 1];
+    var f = x - i;
+    return w.map[i] + (w.map[i + 1] - w.map[i]) * f;
+  }
+
+  document.getElementById('sub').textContent =
+    D.work + ' · ' + P.length + ' 位演奏家 · 参照时间轴 ' + mmss(D.duration);
+
+  /* 时间轴刻度按实际长度分四档，不写死 —— 曲子换了也不用改模板 */
+  (function () {
+    var marks = document.getElementById('marks');
+    var cells = [];
+    for (var k = 0; k <= 3; k++) {
+      cells.push('<span>' + mmss(D.duration * k / 3) + '</span>');
+    }
+    marks.innerHTML = cells.join('');
+  })();
+
+  /* ---------- 完整听 ---------- */
+  var player = document.getElementById('player');
+  var rows = P.map(function (p, i) {
+    return '<button class="row" data-i="' + i + '">' +
+      '<span class="no mono">' + (i + 1) + '</span>' +
+      '<span class="name"><b>' + esc(p.display) + '</b><i>' + esc(p.fullName) + '</i></span>' +
+      '<span class="dur mono">' + mmss(p.videoSec || D.duration) + '</span>' +
+      '</button>';
+  }).join('');
+  document.getElementById('rows').innerHTML = rows;
+
+  document.getElementById('rows').addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-i]');
+    if (!el) return;
+    var i = +el.getAttribute('data-i');
+    Array.prototype.forEach.call(this.children, function (c) { c.classList.remove('on'); });
+    el.classList.add('on');
+    player.src = 'video/' + P[i].id + '.mp4';
+    player.play().catch(function () {});
+  });
+
+  /* ---------- 同一句对比 ---------- */
+  var total = D.duration;
+  var pos = document.getElementById('pos');
+  var posLabel = document.getElementById('posLabel');
+  var movLabel = document.getElementById('movLabel');
+  var picks = document.getElementById('picks');
+  var audios = [];
+  var cur = -1;
+  var timer = null;
+  var gapTimer = null;
+  var cycle = false;
+
+  picks.innerHTML = P.map(function (p, i) {
+    return '<button class="pick" data-i="' + i + '">' +
+      '<span class="k mono">' + (i + 1) + '</span><span>' + esc(p.display) + '</span></button>';
+  }).join('');
+
+  P.forEach(function (p) {
+    var a = document.createElement('audio');
+    a.preload = 'metadata';
+    a.src = 'audio/' + p.id + '.m4a';
+    audios.push(a);
+  });
+
+  function stopAudio() {
+    clearTimeout(timer);
+    timer = null;
+    audios.forEach(function (a) { a.pause(); });
+  }
+
+  /* iOS 的自动播放策略：play() 必须紧跟用户手势。轮播时第 2 个以后是在 setTimeout
+     里播的，没有手势，会被静默拒绝。解法是在第一次手势里把 8 个元素都「解锁」一遍
+     —— 静音播一下再暂停，元素就被标记为已获授权，之后定时器里也能播。
+     跳过 skip 这个元素，避免解锁的 play/pause 把紧接着要正式播的那一路掐掉。 */
+  var unlocked = false;
+  function unlockAll(skip) {
+    if (unlocked) return;
+    unlocked = true;
+    audios.forEach(function (a, k) {
+      if (k === skip) return;
+      a.muted = true;
+      var pr = a.play();
+      if (pr && pr.then) {
+        pr.then(function () {
+          a.pause();
+          a.muted = false;
+          try { a.currentTime = 0; } catch (e) { /* 元数据未就绪 */ }
+        }, function () { a.muted = false; });
+      } else {
+        a.muted = false;
+      }
+    });
+  }
+
+  function stopAll() {
+    cycle = false;
+    clearTimeout(gapTimer);
+    gapTimer = null;
+    stopAudio();
+    cur = -1;
+    Array.prototype.forEach.call(picks.children, function (c) { c.classList.remove('on'); });
+  }
+
+  function playOne(i, then) {
+    stopAudio();
+    var t = (+pos.value / 100) * total;
+    var a = audios[i];
+    cur = i;
+    Array.prototype.forEach.call(picks.children, function (c, k) {
+      c.classList.toggle('on', k === i);
+    });
+    var target = at(P[i].id, t);
+    var go = function () {
+      try { a.currentTime = target; } catch (e) { /* metadata 未就绪时忽略 */ }
+      a.play().catch(function () {});
+      timer = setTimeout(function () {
+        a.pause();
+        if (then) then();
+      }, SEG * 1000);
+    };
+    if (a.readyState >= 1) go();
+    else a.addEventListener('loadedmetadata', function once() {
+      a.removeEventListener('loadedmetadata', once);
+      go();
+    });
+  }
+
+  picks.addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-i]');
+    if (!el) return;
+    var i = +el.getAttribute('data-i');
+    stopAll();
+    unlockAll(i);          // 必须在手势里，且和解锁目标之外的元素互不干扰
+    playOne(i, null);
+  });
+
+  /* 轮播：同一句连听八遍，中间留 0.4 秒让耳朵落一下 */
+  document.getElementById('cycle').addEventListener('click', function () {
+    stopAll();
+    unlockAll(0);
+    cycle = true;
+    (function next(i) {
+      if (!cycle || i >= P.length) { cycle = false; return; }
+      playOne(i, function () {
+        if (!cycle) return;
+        gapTimer = setTimeout(function () { next(i + 1); }, 400);
+      });
+    })(0);
+  });
+
+  document.getElementById('stop').addEventListener('click', stopAll);
+
+  function showPos() {
+    var t = (+pos.value / 100) * total;
+    posLabel.textContent = mmss(t);
+    var m = D.movements.find(function (x) { return t >= x.start && t < x.end; });
+    movLabel.textContent = (m && m.label) || '';
+  }
+  pos.addEventListener('input', showPos);
+  /* 松手才重播：拖动过程中连续 seek 会把人听晕 */
+  pos.addEventListener('change', function () {
+    showPos();
+    if (cur >= 0) playOne(cur, null);
+  });
+  showPos();
+
+  /* ---------- tab ---------- */
+  document.querySelector('.tabs').addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-tab]');
+    if (!el) return;
+    showTab(el.getAttribute('data-tab'));
+  });
+
+  function showTab(name) {
+    Array.prototype.forEach.call(document.querySelector('.tabs').children, function (c) {
+      c.classList.toggle('on', c.getAttribute('data-tab') === name);
+    });
+    document.getElementById('tab-listen').hidden = name !== 'listen';
+    document.getElementById('tab-compare').hidden = name !== 'compare';
+    if (name === 'listen') stopAll();
+    else player.pause();     // 切到对比时别让视频在后台继续响
+    // 用 replaceState 而不是改 location.hash：后者会多出历史记录、还会跳滚动位置
+    try {
+      history.replaceState(null, '', name === 'compare' ? '#compare' : location.pathname);
+    } catch (e) { /* file:// 下可能被拒，无所谓 */ }
+  }
+
+  /* tab 写进 hash：刷新后仍停在原来的位置，也方便直接把「同一句对比」发给别人 */
+  if (location.hash === '#compare') showTab('compare');
+})();
+</script>
+</body>
+</html>

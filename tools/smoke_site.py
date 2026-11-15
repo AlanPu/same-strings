@@ -35,6 +35,10 @@ MIME = {
     ".js": "application/javascript; charset=utf-8",
     ".json": "application/json; charset=utf-8",
     ".m4a": "audio/mp4",
+    # 参照页的视频。少了这条会落到 octet-stream，iOS 对 <video> 的 MIME 比 <audio>
+    # 更挑，实测会出现「一直转圈不出画面」。
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
 }
 
 
