@@ -12,6 +12,9 @@ build.log
 dist/同弦.html
 dist/bank.json
 
+# 证书私钥绝对不能进构建上下文（也不该进任何镜像层）
+certs/
+
 # 参照页（8 个原视频 + 对比音轨，约 3 GB）走 volumes 挂载进容器（见 docker-compose.yml），
 # 不进构建上下文。漏了这一条不会报错，但每次 build 都要把 3 GB 先发给守护进程，
 # 在 NAS 上表现为「卡在 Sending build context 不动」。

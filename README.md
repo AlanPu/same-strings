@@ -131,25 +131,81 @@ ssh nas 'cd /volume1/docker/same-strings && sudo /usr/local/bin/docker compose u
 
 首次 build 会拉 `nginx:1.27-alpine`（约 20 MB），NAS 要能上网。
 
-两个服务走两个端口，互不干扰：
+两个服务走两个端口，互不干扰，**协议是 HTTPS**：
 
 | NAS 上的端口 | 容器内 | 是什么 |
 |---|---|---|
-| **25001** | 80 | 练习器（`dist/site`，打进镜像） |
-| **25002** | 8081 | 参照页（`dist/ref`，从挂载目录读） |
+| **25001** | 443 | 练习器（`dist/site`，打进镜像） |
+| **25002** | 8443 | 参照页（`dist/ref`，从挂载目录读） |
 
 ```bash
-http://<NAS 地址>:25001/     # 练习器
-http://<NAS 地址>:25002/     # 参照页
+https://same.alanpu.top:25001/     # 练习器
+https://ref.alanpu.top:25002/      # 参照页
 ```
 
-端口和参照页目录都走 `.env`：
+端口、参照页目录、证书目录都走 `.env`：
 
 ```
 PORT=25001
 REF_PORT=25002
 REF_DIR=/volume1/docker/same-strings/ref
+CERT_DIR=/volume1/docker/same-strings/certs
 ```
+
+容器内监听 443 / 8443 而不是 80 / 8081，是因为 **DSM 自己占着宿主机的 443**（登录页）。
+宿主机侧仍映射到 25001 / 25002，所以换了协议之后端口号没变，只是 URL 里的 `http` → `https`。
+
+### HTTPS 证书
+
+证书**不进镜像**，从宿主机只读挂载到 `/etc/nginx/certs`：
+
+```yaml
+volumes:
+  - "${CERT_DIR:-./certs}:/etc/nginx/certs:ro"
+```
+
+目录里必须有两个文件，缺一个 nginx 就直接退出（不是降级到 http）：
+
+| 文件 | 是什么 |
+|---|---|
+| `fullchain.pem` | 证书链：叶子证书 + 中间证书。**只给叶子证书，iOS 会以「链不完整」拒连** |
+| `privkey.pem` | 私钥 |
+
+`.dockerignore` 里排掉了 `certs/` —— 镜像会被推到仓库或私有 registry，
+私钥一旦进过某一层，就永远在里面（删掉也还在历史层里）。
+
+证书直接从 DSM 的证书库取（`*.alanpu.top` 由 DSM 续签，跟着走就不用单独维护）：
+
+```bash
+sudo sh -c 'set -e
+  d=/volume1/docker/same-strings/certs
+  cp /usr/syno/etc/certificate/system/default/fullchain.pem "$d/"
+  cp /usr/syno/etc/certificate/system/default/privkey.pem "$d/"
+  chmod 600 "$d"/*.pem
+  ls -l "$d"'
+```
+
+DSM 续签之后要重新执行这条 —— 容器挂的是文件，不是 DSM 的引用。
+
+### 内网 DNS（让域名指到 NAS）
+
+`alanpu.top` 的公网 A 记录指向家里宽带那个 IP，而路由器上没做任何端口映射 ——
+所以在家用 iPad 打开 `https://same.alanpu.top:25001`，请求会绕去公网、然后超时。
+不能靠改 hosts 解决（iOS 上要越狱），只能让**内网的 DNS 回答成 NAS 的地址**。
+
+DSM 装 **DNS Server** 套件（套件中心，免费），然后：
+
+1. 区域 → 新增 → 主要区域 → 域名 `alanpu.top`
+2. 加两条 A 记录：`same` → `192.168.3.117`、`ref` → `192.168.3.117`
+3. 让 iPad 用这台 DNS：路由器 DHCP 下发 192.168.3.117，或 iPad 手动填
+
+代价要说清楚：**主要区域对「没定义的子域」返回 NXDOMAIN**，不是回落到公网。
+所以如果 `alanpu.top` 上还挂着别的公网服务（`www`、`mail` 之类），
+要么在 NAS 上补上对应记录，要么别用这个域名做内网解析。
+现在这域名只有 NAS 在用，影响不大。
+
+健康检查也必须跟着改：容器内只能走 `127.0.0.1`，和证书上的域名对不上，
+所以要 `wget --no-check-certificate`，否则服务明明是好的，容器却一直是 `unhealthy`。
 
 为什么拆成两个端口而不是 80 加 `/ref/` 子路径：参照页里的引用全是相对路径
 （`video/xxx.mp4`、`audio/xxx.m4a`），挂在 `/ref/` 下就得额外维护
@@ -219,8 +275,8 @@ tar --no-xattrs -C dist -cf - ref | ssh nas 'tar -xf - -C /volume1/docker/same-s
 
 | 地址 | 是什么 |
 |---|---|
-| `http://<NAS>:25001/` | 练习器（`dist/site`，在镜像里） |
-| `http://<NAS>:25002/` | 参照页（来自挂载目录） |
+| `https://same.alanpu.top:25001/` | 练习器（`dist/site`，在镜像里） |
+| `https://ref.alanpu.top:25002/` | 参照页（来自挂载目录） |
 
 两个细节值得知道：
 

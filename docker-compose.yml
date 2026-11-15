@@ -10,12 +10,13 @@ services:
     #   TARGET_PLATFORM=linux/arm64 docker compose up -d
     platform: ${TARGET_PLATFORM:-linux/amd64}
     ports:
-      # 两个服务走两个端口，互不影响：
-      #   25001 → 容器的 80   → 练习器
-      #   25002 → 容器的 8081 → 参照页（没挂载 ref/ 就是 404，练习器不受影响）
+      # 两个服务走两个端口，互不影响（协议是 HTTPS）：
+      #   25001 → 容器的 443  → 练习器
+      #   25002 → 容器的 8443 → 参照页（没挂载 ref/ 就是 404，练习器不受影响）
       # 想换端口就改 .env 里的 PORT / REF_PORT，不用改这个文件。
-      - "${PORT:-25001}:80"
-      - "${REF_PORT:-25002}:8081"
+      # 宿主机侧不能直接用 443：那个被 DSM 登录页占着。
+      - "${PORT:-25001}:443"
+      - "${REF_PORT:-25002}:8443"
     volumes:
       # 参照页（8 个原视频 + 对比音轨，约 3.1 GB）不进镜像，而是从宿主机目录挂进来。
       # 这样镜像仍然只有 150 MB 左右，视频换了也不用重新 build。
@@ -27,8 +28,12 @@ services:
       #
       # 不想用参照页就把这段整个删掉 —— 练习器照常工作，/ref/ 返回 404。
       - "${REF_DIR:-./dist/ref}:/usr/share/nginx/html/ref:ro"
+      # 证书（fullchain.pem + privkey.pem）只在宿主机上，绝不进镜像。
+      # 只读挂载：即使容器被攻破也改不动私钥。
+      # 文件权限保持 600 root:root 即可 —— nginx 主进程以 root 起，能读；worker 不需要读。
+      - "${CERT_DIR:-./certs}:/etc/nginx/certs:ro"
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      test: ["CMD", "wget", "-q", "--no-check-certificate", "-O", "/dev/null", "https://127.0.0.1/healthz"]
       interval: 30s
       timeout: 3s
       retries: 3
