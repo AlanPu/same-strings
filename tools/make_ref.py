@@ -18,8 +18,13 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import numpy as np
+import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -60,6 +65,47 @@ def concat_parts(pid: str, parts: list[Path], dst: Path) -> None:
     listfile.unlink(missing_ok=True)
 
 
+def music_start(path: Path, probe_sec: float = 120.0) -> float:
+    """估出视频里音乐真正开始的时刻。
+
+    为什么需要：这些录像的开头不都是有声的。哈德利希前 20 秒在 -45…-53 dBFS，
+    穆特前 8 秒是数字静音、到第 36 秒才有乐声，文格洛夫要到第 31 秒。
+    用户点开听到一片安静，第一反应就是「这个没声音」。
+
+    做法：只看前 ``probe_sec`` 秒，以 0.5 s 为窗算 RMS。把这段里的 95 百分位
+    当作「音乐电平」，阈值取它往下 20 dB —— 掌声和环境噪声比音乐低太多，
+    过不了线。再从第一个「连续 4 个窗口超过阈值」的位置往回退 2 秒作为缓冲，
+    不要正好切在起音上。
+
+    Args:
+        path: 视频文件。
+        probe_sec: 只分析开头多少秒（全曲解码没必要，也慢）。
+
+    Returns:
+        音乐起点（秒）；判断不出来或本来就一开就有声时返回 0.0。
+    """
+    with tempfile.TemporaryDirectory() as td:
+        wav = Path(td) / "head.wav"
+        subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", str(path), "-t", str(probe_sec),
+             "-ac", "1", "-ar", "8000", str(wav)],
+            check=True, capture_output=True)
+        x, sr = sf.read(wav, dtype="float32")
+    win = int(sr * 0.5)
+    if len(x) < win * 8:
+        return 0.0
+    rms = np.array([float(np.sqrt(np.mean(x[i:i + win] ** 2)))
+                    for i in range(0, len(x) - win + 1, win)])
+    db = 20 * np.log10(np.maximum(rms, 1e-9))
+    threshold = float(np.percentile(db, 95)) - 20.0
+    above = db > threshold
+    for i in range(len(above) - 3):
+        if above[i] and above[i + 1] and above[i + 2] and above[i + 3]:
+            onset = max(0.0, i * 0.5 - 2.0)
+            return 0.0 if onset < 3.0 else round(onset, 1)
+    return 0.0
+
+
 def main() -> int:
     proj = load_project()
     log = lambda m: print(m, flush=True)  # noqa: E731
@@ -70,6 +116,7 @@ def main() -> int:
     # ---- 视频 ---------------------------------------------------
     log("== 视频 ==")
     vid_sec: dict[str, float] = {}
+    start_at: dict[str, float] = {}
     for p in proj.performers:
         single, parts = find_video(p.id)
         dst = OUT / "video" / f"{p.id}.mp4"
@@ -93,7 +140,9 @@ def main() -> int:
         # 每位演奏家的演奏速度不同，视频长度也就不一样（最快的和最慢的差好几分钟），
         # 所以列表里的时长必须实测，不能统一填锚点的全长。
         vid_sec[p.id] = audio.duration(dst)
-        log(f"  {p.id}: {mb:.0f} MB, {vid_sec[p.id] / 60:.1f} 分")
+        start_at[p.id] = music_start(dst)
+        note = f"，开场静音 {start_at[p.id]:.0f}s" if start_at[p.id] > 0 else ""
+        log(f"  {p.id}: {mb:.0f} MB, {vid_sec[p.id] / 60:.1f} 分{note}")
 
     # ---- 对比音轨 -----------------------------------------------
     log("== 对比音轨 ==")
@@ -123,7 +172,8 @@ def main() -> int:
         "duration": round(duration, 3),
         "warpStep": config.WARP_STEP,
         "performers": [{"id": p.id, "display": p.display, "fullName": p.fullName,
-                        "videoSec": round(vid_sec.get(p.id, 0.0), 1)}
+                        "videoSec": round(vid_sec.get(p.id, 0.0), 1),
+                        "musicStart": start_at.get(p.id, 0.0)}
                        for p in proj.performers],
         "movements": [{"start": m["start"], "end": m["end"], "label": m["label"] or "全曲"}
                       for m in movements],

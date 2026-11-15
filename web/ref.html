@@ -119,9 +119,12 @@ input[type=range]::-webkit-slider-thumb {
 
 <section id="tab-listen">
   <video id="player" controls playsinline preload="metadata"></video>
+  <p class="hint" id="skipNote"></p>
   <div class="list" id="rows"></div>
   <p class="hint">点一位就开始播。8 个版本用的是同一份曲目，速度与处理各不相同 ——
-    听的时候留意：揉弦的密度、换弓的棱角、句尾怎么收。</p>
+    听的时候留意：揉弦的密度、换弓的棱角、句尾怎么收。<br>
+    有的录像开头是十几秒到半分钟的静场（就位、观众入场），点开时会自动跳过，
+    并提示跳了多少；想从第一帧看就把进度条拖回 0:00。</p>
 </section>
 
 <section id="tab-compare" hidden>
@@ -186,6 +189,16 @@ input[type=range]::-webkit-slider-thumb {
 
   /* ---------- 完整听 ---------- */
   var player = document.getElementById('player');
+  var skipNote = document.getElementById('skipNote');
+  /* 跳到音乐起点必须等 metadata：src 刚设好时 duration 还是 NaN，seek 会被丢掉。
+     用 pendingSeek 记住「下一个 metadata 就跳到这里」，避免在加载中硬设 currentTime。 */
+  var pendingSeek = -1;
+  player.addEventListener('loadedmetadata', function () {
+    if (pendingSeek >= 0) {
+      try { player.currentTime = pendingSeek; } catch (e) { /* 个别机型会抛 */ }
+      pendingSeek = -1;
+    }
+  });
   var rows = P.map(function (p, i) {
     return '<button class="row" data-i="' + i + '">' +
       '<span class="no mono">' + (i + 1) + '</span>' +
@@ -199,10 +212,34 @@ input[type=range]::-webkit-slider-thumb {
     var el = ev.target.closest('[data-i]');
     if (!el) return;
     var i = +el.getAttribute('data-i');
+    var p = P[i];
+    // musicStart 由构建期实测（见 tools/make_ref.py）。哈德利希 21 秒、
+    // 文格洛夫 31 秒、穆特 36 秒的开头几乎是静音，不跳过去会让人以为「没声音」。
+    var ms = p.musicStart || 0;
+    var want = ms > 0 ? Math.max(0, ms - 2) : 0;   // 退 2 秒，别正好切在起音上
+    var src = 'video/' + p.id + '.mp4';
+    var same = !!(player.currentSrc && player.currentSrc.indexOf(src) >= 0);
+
     Array.prototype.forEach.call(this.children, function (c) { c.classList.remove('on'); });
     el.classList.add('on');
-    player.src = 'video/' + P[i].id + '.mp4';
+
+    player.pause();
+    if (same) {
+      // 同一个源被再次点击：重新加载不会触发 loadedmetadata，直接定位
+      try {
+        player.currentTime = want;
+        pendingSeek = -1;
+      } catch (e) {
+        pendingSeek = want > 0 ? want : -1;   // 元数据没就绪，交给 loadedmetadata
+      }
+    } else {
+      pendingSeek = want > 0 ? want : -1;
+      player.src = src;
+    }
     player.play().catch(function () {});
+    skipNote.textContent = want > 0
+      ? '已跳过开场 ' + mmss(want) + '（静场/掌声）· 拖回 0:00 可看开头'
+      : '';
   });
 
   /* ---------- 同一句对比 ---------- */

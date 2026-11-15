@@ -126,6 +126,18 @@ def main() -> int:
         rows.append(("页面含各人时长", f"{min(vs):.0f}–{max(vs):.0f} s",
                      all(v > 60 for v in vs)))
 
+        # 开场静音跳过点。实测哈德利希 18 s、文格洛夫 32 s、穆特 34 s 才有声，
+        # 不跳过去用户会以为「这个没声音」；值本身也要落在合理范围里。
+        starts = {p["id"]: p.get("musicStart", 0) for p in data["performers"]}
+        bad_start = [k for k, v in starts.items() if not (0 <= v <= 60)]
+        rows.append(("开场静音跳过点",
+                     "、".join(f"{k} {v:.0f}s" for k, v in starts.items() if v > 0) or "全部有声",
+                     not bad_start))
+        # 跳过的点必须早于音轨长度，否则一点开就直接到头
+        over = [k for k, v in starts.items()
+                if v > 0 and v >= audio.duration(config.DIR_PCM / f"{k}.wav") - 60]
+        rows.append(("跳过点未越界", f"越界 {len(over)} 位", not over))
+
     width = max(len(r[0]) for r in rows)
     bad = sum(1 for *_, ok in rows if not ok)
     for name, detail, ok in rows:
