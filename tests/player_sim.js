@@ -103,6 +103,20 @@ stats.seqOK = seq.length === segments.length && seq.every(function (q, i) {
 });
 if (!stats.seqOK) fail.push('顺序模式异常');
 
+/* 从中间某段起顺序走：题数 = 总段数 − 起点下标，首题就是起点那一段 */
+var fromIdx = Math.min(3, segments.length - 1);
+var startSeg = segments[fromIdx];
+var seqFrom = LOGIC.buildSequential({
+  performers: performers, segments: segments, from: startSeg.id
+});
+stats.seqFromCount = seqFrom.length;
+stats.seqFromOK = seqFrom.length === segments.length - fromIdx
+  && seqFrom.length > 0
+  && seqFrom[0].segmentId === startSeg.id
+  && seqFrom[0].clipId === startSeg.clips[seqFrom[0].correct]
+  && seqFrom[seqFrom.length - 1].segmentId === segments[segments.length - 1].id;
+if (!stats.seqFromOK) fail.push('「从某段往后走」异常：' + stats.seqFromCount + ' 题');
+
 /* 单段模式：只出一题；avoid 生效 → 换人；多跑几次能覆盖到多人 */
 var seg0 = segments[Math.floor(segments.length / 2)];
 var one = LOGIC.buildSingle({ performers: performers, segment: seg0 });

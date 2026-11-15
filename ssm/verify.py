@@ -143,15 +143,16 @@ def run_checks(proj: Project, log) -> tuple[list[dict], bool]:
     add(15, "演奏家覆盖", "每位至少有一个片段",
         "全覆盖" if not missing else f"缺失 {missing}", not missing)
 
-    # 16 本轮新增能力（用户要求：从头开始 / 自选段落 / 时长自选）
+    # 16 本轮新增能力（从头开始 / 从中间某段起 / 自选段落 / 时长自选）
     if sim:
-        add(16, "自选段落/顺序/时长", "顺序题数=段数；单段可换人；presets 含上限时长",
-            f"顺序 {sim.get('seqCount', '—')} 题／单段 "
-            f"{sim.get('singleCount', '—')} 题／presets "
-            f"{sim.get('presets', '—')}",
-            sim.get("seqOK") is True and sim.get("singleOK") is True and sim.get("presetOK") is True)
+        add(16, "顺序起点/单段/时长", "顺序=段数；从中间起=剩余段数；单段可换人；presets 含上限",
+            f"顺序 {sim.get('seqCount', '—')} 题／从第 4 段起 "
+            f"{sim.get('seqFromCount', '—')} 题／单段 {sim.get('singleCount', '—')} 题／"
+            f"presets {sim.get('presets', '—')}",
+            sim.get("seqOK") is True and sim.get("seqFromOK") is True
+            and sim.get("singleOK") is True and sim.get("presetOK") is True)
     else:
-        add(16, "自选段落/顺序/时长", "顺序题数=段数；单段可换人；presets 含上限时长",
+        add(16, "顺序起点/单段/时长", "顺序=段数；从中间起=剩余段数；单段可换人；presets 含上限",
             "node 不可用，未跑", None, MANUAL)
 
     # 17 切分顺序（用户要求：从乐曲开头按顺序切，不随机）

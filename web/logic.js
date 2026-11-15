@@ -154,10 +154,19 @@
   }
 
   /* 顺序模式：按段落时间顺序，一段一题（「从头开始」） */
+  /* 顺序模式：一段一题，按段的时间顺序往后走。
+   * opt.from 给某一段的 id 时，从它开始（含它）往后；不给则从第 1 段开始。
+   * 题号重新从 1 计 —— 别让用户看到「第 21 / 53 题」这种跟当前这轮对不上的数字。
+   */
   function buildSequential(opt) {
     var ids = opt.performers.map(function (p) { return p.id; });
     var rnd = opt.rnd || Math.random;
     var segs = opt.segments.slice();
+    if (opt.from) {
+      for (var k = 0; k < segs.length; k++) {
+        if (segs[k].id === opt.from) { segs = segs.slice(k); break; }
+      }
+    }
     var order = [];
     while (order.length < segs.length) order = order.concat(shuffle(ids.slice(), rnd));
     var appear = zeroCounts(ids);

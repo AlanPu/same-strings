@@ -56,6 +56,7 @@
     status: 'idle',
     duration: MAXD,       // 每段听到第几秒停
     fixedSeg: null,       // 单段模式锁定的段落 id
+    segMode: 'single',    // 选段页的动作：single=只练这一段；seqfrom=从这段往后走
     storageOK: true,
     store: null,
     toast: ''
@@ -342,14 +343,15 @@
             '<span class="hint">' + BANK.segments.length + ' 段顺次 · 一段一题</span></button>' +
           '<div class="row">' +
             '<button class="btn" data-act="start" data-mode="practice">随机练习<span class="hint">10 题</span></button>' +
-            '<button class="btn" data-act="segments">自己选段<span class="hint">反复练一段</span></button>' +
+            '<button class="btn" data-act="segments">自己选段<span class="hint">单练 / 从某段往后</span></button>' +
           '</div>' +
           '<div class="row">' +
             '<button class="btn ghost" data-act="start" data-mode="exam">考试<span class="hint">10 题不即时反馈</span></button>' +
             (hasReview ? '<button class="btn ghost" data-act="start" data-mode="review">错题</button>' : '') +
           '</div>' +
         '</div>' +
-        '<p class="tiny">顺序＝按乐曲时间轴一段段往后走；随机＝按你的错误率抽段；自己选段＝反复磨同一段。</p>' +
+        '<p class="tiny">顺序＝按乐曲时间轴一段段往后走；随机＝按你的错误率抽段；'
+          + '自己选段＝单练某一段，或从某一段起往后走。</p>' +
         '<div class="statgrid">' +
           '<div class="stat"><div class="num mono">' + o.asked + '</div><div class="lbl">已答题数</div></div>' +
           '<div class="stat"><div class="num mono">' + acc + '</div><div class="lbl">正确率</div></div>' +
@@ -392,14 +394,24 @@
         '<span class="chev">›</span></button>';
     }).join('');
 
+    var pickSeq = S.segMode === 'seqfrom';
+
     return '' +
       '<div class="screen">' +
         '<div class="between">' +
-          '<h2 class="h2">选一段来练</h2>' +
+          '<h2 class="h2">' + (pickSeq ? '从哪一段往后走' : '选一段来练') + '</h2>' +
           '<button class="btn ghost sm" data-act="home">返回</button>' +
         '</div>' +
-        '<p class="sub">全曲 ' + BANK.segments.length + ' 段，按乐章分组。点任意一段就开始；'
-          + '每次随机换一位演奏家，答完可以「再来一题」。</p>' +
+        '<div class="chips" style="margin-bottom:12px">' +
+          '<button class="chip' + (pickSeq ? '' : ' on') +
+            '" data-act="segmode" data-val="single">单练一段</button>' +
+          '<button class="chip' + (pickSeq ? ' on' : '') +
+            '" data-act="segmode" data-val="seqfrom">从这段往后走</button>' +
+        '</div>' +
+        '<p class="sub">' + (pickSeq
+          ? '点一段当起点，从它开始按时间顺序往后走。一次一节，中途随时可以退出。'
+          : '全曲 ' + BANK.segments.length + ' 段，按乐章分组。点任意一段单练，'
+            + '每次随机换一位演奏家，答完可以「再来一题」。') + '</p>' +
         '<div class="card tight">' +
           '<div class="between" style="margin-bottom:10px">' +
             '<span class="lab">每段听多久</span><span class="tiny">越短越难</span>' +
@@ -408,7 +420,7 @@
         '</div>' +
         '<div class="list">' + rows + '</div>' +
         '<div class="spacer"></div>' +
-        '<button class="btn ghost" data-act="start" data-mode="sequence">从头开始（顺序）</button>' +
+        '<button class="btn ghost" data-act="start" data-mode="sequence">从头开始（第 1 段起）</button>' +
       '</div>';
   }
 
@@ -471,6 +483,8 @@
         footer = fb + '<div class="footer">' + ab +
           '<button class="btn primary" data-act="again">再来一题</button>' +
           '</div>' +
+          '<p class="tiny center"><button class="linkbtn" data-act="seqfrom" data-seg="' +
+            q.segmentId + '">从这一段往后走 →</button></p>' +
           '<p class="tiny center"><button class="linkbtn" data-act="finish">结束本次练习</button></p>';
       } else {
         footer = fb + '<div class="footer">' + ab +
@@ -597,7 +611,12 @@
     };
     var qs = [];
     if (mode === 'sequence') {
-      qs = LOGIC.buildSequential(base);
+      /* segId 作为起点：从这一段开始往后走，而不是每次都从第 1 段起 */
+      qs = LOGIC.buildSequential({
+        performers: BANK.performers,
+        segments: BANK.segments,
+        from: segId || null
+      });
     } else if (mode === 'single') {
       var seg = segById(segId);
       if (!seg) { S.toast = '找不到这一段'; S.screen = 'home'; render(); return; }
@@ -704,8 +723,13 @@
     var act = el.getAttribute('data-act');
     var q = currentQ();
 
-    if (act === 'start') return startRound(el.getAttribute('data-mode'));
-    if (act === 'seg') return startRound('single', el.getAttribute('data-seg'));
+    if (act === 'start') return startRound(el.getAttribute('data-mode'), el.getAttribute('data-seg'));
+    if (act === 'seg') {
+      return startRound(S.segMode === 'seqfrom' ? 'sequence' : 'single',
+                        el.getAttribute('data-seg'));
+    }
+    if (act === 'segmode') { S.segMode = el.getAttribute('data-val'); return render(); }
+    if (act === 'seqfrom') return startRound('sequence', el.getAttribute('data-seg'));
     if (act === 'segments') { stopAudio(); S.screen = 'segments'; S.toast = ''; return render(); }
     if (act === 'duration') {
       S.duration = clampDur(el.getAttribute('data-sec'));

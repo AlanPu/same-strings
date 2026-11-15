@@ -98,19 +98,33 @@ window.__osc = 0;
       click($('[data-act="home"]'));
       click($('[data-act="segments"]'));
       step('选段页条目', $$('.segrow').length);
-      step('选段页有时长chips', $$('.chip').length);
+      step('选段页有时长chips', $$('.chip[data-act="duration"]').length);
+      step('选段页模式chips', $$('.chip[data-act="segmode"]').length);
       click($$('.segrow')[2]);
       step('单段模式标', pill(0));
       step('单段选项数', $$('.opt').length);
       click($$('.opt')[0]);
       step('单段有再来一题', !!$('[data-act="again"]'));
       step('单段有结束入口', !!$('[data-act="finish"]'));
+      step('单段有往后走入口', !!$('[data-act="seqfrom"]'));
       click($('[data-act="again"]'));
       step('再来一题后反馈清空', !$('.feedback'));
       step('再来一题选项数', $$('.opt').length);
       click($$('.opt')[0]);
       click($('[data-act="finish"]'));
       step('单段小结', !!$('.score'));
+
+      /* ---------- 从某一段往后走（新功能） ---------- */
+      click($('[data-act="home"]'));
+      click($('[data-act="segments"]'));
+      click($('[data-act="segmode"][data-val="seqfrom"]'));
+      step('切到往后走标题', ($('.h2') || {}).textContent);
+      click($$('.segrow')[3]);
+      step('往后走模式标', pill(0));
+      step('往后走第1题', pill(1));
+      click($$('.opt')[0]);
+      step('往后走有反馈', !!$('.feedback'));
+      click($('[data-act="quit"]'));   /* 回到首页，后面的练习/考试用例要从这里起 */
 
       /* ---------- 随机练习 10 题 ---------- */
       click($('[data-act="home"]'));
